@@ -36,7 +36,12 @@ class TabMRegressor(BaseTabularRegressor):
         share_training_batches: bool = True,
         gradient_clipping_norm: Optional[float] = 1.0,
         # Embeddings
-        piecewise_linear_embeddings: bool = False,
+        use_embeddings: bool = True,
+        embedding_type: str = "piecewise_linear",  # or "linear", "lr", "plr", etc.
+        embedding_dim: int = 16,
+        # Dimensionality reduction
+        use_pca: bool = False,
+        n_pca_components: Optional[int] = None,
         # Misc
         device=None,
         random_state=42,
@@ -45,10 +50,6 @@ class TabMRegressor(BaseTabularRegressor):
     ):
         self.arch_type = arch_type
         self.k = k
-
-        self.piecewise_linear_embeddings = piecewise_linear_embeddings
-        self.num_embeddings = None
-        self.bins = None
 
         self.n_blocks = n_blocks
         self.d_block = d_block
@@ -61,6 +62,13 @@ class TabMRegressor(BaseTabularRegressor):
         self.gradient_clipping_norm = gradient_clipping_norm
         self.share_training_batches = share_training_batches
 
+        # Embeddings
+        self.use_embeddings = use_embeddings
+        self.embedding_type = embedding_type
+        self.embedding_dim = embedding_dim
+        self.num_embeddings = None
+        self.bins = None
+
         super().__init__(
             epochs=epochs,
             learning_rate=learning_rate,
@@ -70,6 +78,8 @@ class TabMRegressor(BaseTabularRegressor):
             device=device,
             random_state=random_state,
             verbose=verbose,
+            use_pca=use_pca,
+            n_pca_components=n_pca_components,
             **kwargs,
         )
 
@@ -97,8 +107,36 @@ class TabMRegressor(BaseTabularRegressor):
             "device",
             "random_state",
             "verbose",
-            "piecewise_linear_embeddings",
+            "use_embeddings",
+            "embedding_type",
+            "embedding_dim",
+            "use_pca",
+            "n_pca_components",
         ]
+
+    def _prepare_embeddings(self, X):
+        """
+        Prepare numerical embeddings configuration.
+        Subclasses can override for custom embedding logic.
+        """
+        if not self.use_embeddings:
+            return
+
+        if self.embedding_type == "piecewise_linear":
+            self.bins = rtdl_num_embeddings.compute_bins(torch.as_tensor(X))
+            self.num_embeddings = {
+                "type": "PiecewiseLinearEmbeddings",
+                "d_embedding": self.embedding_dim,
+                "activation": False,
+                "version": "B",
+            }
+        elif self.embedding_type == "linear":
+            self.num_embeddings = {
+                "type": "LinearEmbeddings",
+                "d_embedding": self.embedding_dim,
+            }
+        else:
+            raise ValueError(f"Unknown embedding type: {self.embedding_type}")
 
     def _create_model(self, n_features):
         model = TabMModel(
@@ -121,19 +159,58 @@ class TabMRegressor(BaseTabularRegressor):
 
         return model.to(self.device)
 
+    def _get_optimizer(self, parameters):
+        """TabM uses AdamW with custom parameter groups."""
+
+        return torch.optim.AdamW(
+            make_parameter_groups(self.model),
+            lr=self.learning_rate,
+            weight_decay=self.weight_decay,
+            betas=(self.beta1, self.beta2),
+        )
+
+    def _optimizer_step(self, optimizer, loss):
+        """Add gradient clipping."""
+        optimizer.zero_grad(set_to_none=True)
+        loss.backward()
+
+        if self.gradient_clipping_norm:
+            nn.utils.clip_grad_norm_(
+                self.model.parameters(), self.gradient_clipping_norm
+            )
+
+        optimizer.step()
+
+    def _compute_loss(self, predictions, batch, criterion):
+        """Special loss for ensemble."""
+        if self.k:  # If using ensemble
+            targets = batch["targets"].repeat_interleave(self.k)
+            return criterion(predictions.flatten(), targets)
+        else:
+            return super()._compute_loss(predictions, batch, criterion)
+
+    def _forward_pass(self, batch):
+        """TabM returns ensemble predictions."""
+        out = self.model(batch["inputs"])
+        return out.squeeze(-1)  # Shape: (batch, k) for ensemble
+
+    def _predict_tensor(self, X_tensor):
+        """Average ensemble predictions."""
+        self.model.eval()
+        preds = []
+        with torch.no_grad():
+            for start in range(0, len(X_tensor), 8192):
+                batch = X_tensor[start : start + 8192]
+                out = self.model(batch).squeeze(-1).mean(1)  # Average over k
+                preds.append(out.cpu())
+        return torch.cat(preds).numpy()
+
     def fit(self, X, y, eval_set=None, verbose=False):
-        """Common fit interface."""
+        """Common fit interface overriding with embeddings init logic."""
         # Apply preprocessing
         X = self._apply_feature_preprocessing(X, fit=True)
-
-        if self.piecewise_linear_embeddings:
-            self.bins = rtdl_num_embeddings.compute_bins(torch.as_tensor(X))
-            self.num_embeddings = {
-                "type": "PiecewiseLinearEmbeddings",
-                "d_embedding": 16,
-                "activation": False,
-                "version": "B",
-            }
+        if self.use_embeddings:
+            self._prepare_embeddings(X)
 
         y = self._apply_target_preprocessing(y, fit=True)
         eval_set = self._prepare_eval_set(eval_set)
@@ -145,101 +222,11 @@ class TabMRegressor(BaseTabularRegressor):
         # Fit model (subclass-specific)
         self._fit_model(X, y, eval_set)
 
+        return self
+
     def _fit_model(self, X, y, eval_set=None):
-        # Convert to tensors
-        X_tensor = torch.as_tensor(X, device=self.device, dtype=torch.float32)
-        y_tensor = torch.as_tensor(y, device=self.device, dtype=torch.float32)
-
-        rng = np.random.RandomState(self.random_state)
-        torch.manual_seed(self.random_state)
-
-        # Setup optimizer
-        optim = torch.optim.AdamW(
-            make_parameter_groups(self.model),
-            lr=self.learning_rate,
-            weight_decay=self.weight_decay,
-            betas=(self.beta1, self.beta2),
-        )
-        criterion = nn.MSELoss()
-
-        # Validation setup
-        if self.use_early_stopping:
-            X_val, y_val = eval_set[0]
-            X_val = torch.as_tensor(X_val, device=self.device, dtype=torch.float32)
-            y_val = torch.as_tensor(y_val, device=self.device, dtype=torch.float32)
-
-        # Training loop
-        best_metric = math.inf
-        patience_left = self.early_stopping_rounds if self.use_early_stopping else 0
-        self.best_iteration = None
-        best_state = None
-
-        for epoch in range(self.epochs):
-            # Training
-            self.model.train()
-            perm = rng.permutation(len(X_tensor))
-
-            for start in range(0, len(X_tensor), self.batch_size):
-                idx = perm[start : start + self.batch_size]
-                xb = X_tensor[idx]
-                yb = y_tensor[idx]
-
-                optim.zero_grad()
-                out = self.model(xb).squeeze(-1)
-
-                if self.k:
-                    loss = criterion(out.flatten(), yb.repeat_interleave(self.k))
-                else:
-                    loss = criterion(out.squeeze(-1), yb)
-
-                loss.backward()
-
-                if self.gradient_clipping_norm:
-                    nn.utils.clip_grad_norm_(
-                        self.model.parameters(), self.gradient_clipping_norm
-                    )
-
-                optim.step()
-
-            # Validation and early stopping
-            if self.use_early_stopping:
-                val_pred = self._predict_model(X_val)
-                val_rmse = self._rmse(val_pred, y_val.cpu().numpy())
-
-                if val_rmse < best_metric:
-                    best_metric = val_rmse
-                    self.best_iteration = epoch
-                    best_state = {
-                        k: v.detach().cpu().clone()
-                        for k, v in self.model.state_dict().items()
-                    }
-                    patience_left = self.early_stopping_rounds
-                else:
-                    patience_left -= 1
-                    if patience_left <= 0:
-                        if self.verbose > 0:
-                            print("Early stopping!")
-                        break
-
-        # Load best weights
-        if best_state is not None:
-            self.model.load_state_dict(best_state)
-        elif self.best_iteration is None:
-            self.best_iteration = self.epochs - 1
-
-    def _rmse(self, pred: np.ndarray, true: np.ndarray) -> float:
-        return float(np.sqrt(np.mean((pred - true) ** 2)))
+        self._fit_pytorch_model(X, y, eval_set)
 
     def _predict_model(self, X):
-        X_tensor = torch.as_tensor(X, device=self.device, dtype=torch.float32)
-        self.model.eval()
-
-        with torch.no_grad():
-            # Predict in batches
-            preds = []
-            for start in range(0, len(X_tensor), 8192):
-                batch = X_tensor[start : start + 8192]
-                out = self.model(batch).squeeze(-1).mean(1)
-                preds.append(out.cpu())
-
-        return torch.cat(preds).numpy()
+        X_tensor = torch.as_tensor(X, dtype=torch.float32, device=self.device)
+        return self._predict_tensor(X_tensor)

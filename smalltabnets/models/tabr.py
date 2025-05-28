@@ -2,36 +2,27 @@ import math
 from typing import Optional
 
 import numpy as np
+import rtdl_num_embeddings
 import torch
 import torch.nn as nn
 
-from .base import BaseTabularRegressor
 from ..modules.tabr.tabr import TabR
+from .base import BaseTabularRegressor
 
 
 class TabRRegressor(BaseTabularRegressor):
-    """
-    Wrapper that exposes the TabR model through the unified interface used
-    in this repository (BaseTabularRegressor).  All common functionality
-    such as feature-scaling, standardisation, clipping, etc. is inherited
-    from the base-class – here we only need to
-
-    1. declare which hyper-parameters TabR understands;
-    2. build / train / predict with the underlying TabR network.
-    """
-
-    # ------------------------------------------------------------------ #
-    #  Construction & hyper-parameters
-    # ------------------------------------------------------------------ #
     def __init__(
         self,
-        # Base (shared) parameters ---------------------------------------
+        # Base (shared) parameters
         epochs: int = 256,
         learning_rate: float = 2e-3,
         batch_size: int = 32,
         use_early_stopping: bool = True,
         early_stopping_rounds: Optional[int] = 16,
-        # TabR specific ---------------------------------------------------
+        # Dimensionality reduction
+        use_pca: bool = False,
+        n_pca_components: Optional[int] = None,
+        # TabR specific
         d_main: int = 64,
         d_multiplier: float = 2.0,
         encoder_n_blocks: int = 2,
@@ -45,7 +36,11 @@ class TabRRegressor(BaseTabularRegressor):
         context_size: int = 16,
         memory_efficient: bool = False,
         candidate_encoding_batch_size: Optional[int] = None,
-        # Misc ------------------------------------------------------------
+        # Embeddings
+        use_embeddings: bool = True,
+        embedding_type: str = "piecewise_linear",  # or "linear", "lr", "plr", etc.
+        embedding_dim: int = 16,
+        # Misc
         device: Optional[str] = "cuda",
         random_state: int = 42,
         verbose: int = 0,
@@ -66,6 +61,13 @@ class TabRRegressor(BaseTabularRegressor):
         self.memory_efficient = memory_efficient
         self.candidate_encoding_batch_size = candidate_encoding_batch_size
 
+        # Embeddings
+        self.use_embeddings = use_embeddings
+        self.embedding_type = embedding_type
+        self.embedding_dim = embedding_dim
+        self.num_embeddings = None
+        self.bins = None
+
         super().__init__(
             epochs=epochs,
             learning_rate=learning_rate,
@@ -75,25 +77,18 @@ class TabRRegressor(BaseTabularRegressor):
             device=device,
             random_state=random_state,
             verbose=verbose,
+            use_pca=use_pca,
+            n_pca_components=n_pca_components,
             **kwargs,
         )
 
-    # ------------------------------------------------------------------ #
-    #  Base-class hooks
-    # ------------------------------------------------------------------ #
     def _get_expected_params(self):
-        """
-        All parameters that may be provided via YAML / Optuna and should be
-        forwarded to TabR’s constructor.
-        """
         return [
-            # Base / optimisation
             "epochs",
             "learning_rate",
             "batch_size",
             "use_early_stopping",
             "early_stopping_rounds",
-            #  TabR architecture
             "d_main",
             "d_multiplier",
             "encoder_n_blocks",
@@ -107,18 +102,15 @@ class TabRRegressor(BaseTabularRegressor):
             "context_size",
             "memory_efficient",
             "candidate_encoding_batch_size",
-            # Misc
             "device",
             "random_state",
             "verbose",
-            # preprocessing flags (handled by base but allowed in YAML)
             "feature_scaling",
             "standardize_targets",
             "clip_features",
             "clip_outputs",
         ]
 
-    # ------------------------------------------------------------------ #
     def _create_model(self, n_features: int):
         """
         Instantiate TabR.  All features in LimeSoDa are treated as numerical
@@ -129,8 +121,8 @@ class TabRRegressor(BaseTabularRegressor):
             n_num_features=n_features,
             n_cat_features=0,
             n_classes=1,  # regression
-            # embeddings (none for purely numerical data)
-            num_embeddings=None,
+            num_embeddings=self.num_embeddings,
+            bins=self.bins,
             # architecture / training params
             d_main=self.d_main,
             d_multiplier=self.d_multiplier,
@@ -147,127 +139,93 @@ class TabRRegressor(BaseTabularRegressor):
         )
         return model.to(self.device)
 
-    # ------------------------------------------------------------------ #
-    #  Training loop
-    # ------------------------------------------------------------------ #
+    def _prepare_batch(self, X_tensor, y_tensor, indices):
+        """TabR needs to prepare candidate memory for each batch."""
+        batch = super()._prepare_batch(X_tensor, y_tensor, indices)
+
+        # Build candidate memory WITHOUT current batch
+        n_train = len(X_tensor)
+        mask = torch.ones(n_train, dtype=torch.bool, device=self.device)
+        mask[indices] = False
+
+        batch["candidate_x_num"] = X_tensor[mask]
+        batch["candidate_y"] = y_tensor[mask]
+        batch["candidate_x_cat"] = None
+        batch["context_size"] = self.context_size
+
+        return batch
+
+    def _forward_pass(self, batch):
+        """TabR has special forward signature with candidates."""
+        return self.model(
+            x_num=batch["inputs"],
+            x_cat=None,
+            y=batch["targets"],
+            candidate_x_num=batch["candidate_x_num"],
+            candidate_x_cat=batch["candidate_x_cat"],
+            candidate_y=batch["candidate_y"],
+            context_size=batch["context_size"],
+            is_train=True,
+        ).squeeze(-1)
+
+    def _prepare_embeddings(self, X):
+        """
+        Prepare numerical embeddings configuration.
+        Subclasses can override for custom embedding logic.
+        """
+        if not self.use_embeddings:
+            return
+
+        if self.embedding_type == "piecewise_linear":
+            self.bins = rtdl_num_embeddings.compute_bins(torch.as_tensor(X))
+            self.num_embeddings = {
+                "type": "PiecewiseLinearEmbeddings",
+                "d_embedding": self.embedding_dim,
+                "activation": False,
+                "version": "B",
+            }
+        elif self.embedding_type == "linear":
+            self.num_embeddings = {
+                "type": "LinearEmbeddings",
+                "d_embedding": self.embedding_dim,
+            }
+        else:
+            raise ValueError(f"Unknown embedding type: {self.embedding_type}")
+
+    def fit(self, X, y, eval_set=None, verbose=False):
+        """Common fit interface overriding with embeddings init logic."""
+        # Apply preprocessing
+        X = self._apply_feature_preprocessing(X, fit=True)
+        if self.use_embeddings:
+            self._prepare_embeddings(X)
+
+        y = self._apply_target_preprocessing(y, fit=True)
+        eval_set = self._prepare_eval_set(eval_set)
+
+        # Create model
+        n_features = X.shape[1]
+        self.model = self._create_model(n_features)
+
+        # Fit model (subclass-specific)
+        self._fit_model(X, y, eval_set)
+
+        return self
+
     def _fit_model(self, X, y, eval_set=None):
-        """
-        Simple SGD training loop with optional early stopping.
-        For each mini-batch we supply the rest of the training data as the
-        retrieval memory (candidates) as required by TabR.
-        """
-        # Torch tensors ---------------------------------------------------
+        """Store candidates for inference, then train."""
         X_tensor = torch.as_tensor(X, dtype=torch.float32, device=self.device)
         y_tensor = torch.as_tensor(y, dtype=torch.float32, device=self.device)
 
-        n_train = X_tensor.shape[0]
-        rng = np.random.RandomState(self.random_state)
-        torch.manual_seed(self.random_state)
-
-        # Optimiser / loss
-        optimiser = torch.optim.Adam(self.model.parameters(), lr=self.learning_rate)
-        criterion = nn.MSELoss()
-
-        # Validation tensors (if given)
-        if self.use_early_stopping and eval_set is not None:
-            X_val_np, y_val_np = eval_set[0]
-            X_val = torch.as_tensor(X_val_np, dtype=torch.float32, device=self.device)
-            y_val = torch.as_tensor(y_val_np, dtype=torch.float32, device=self.device)
-        else:
-            X_val = y_val = None
-
-        # Store candidate memory for later inference
+        # Store for inference
         self._candidate_x_num = X_tensor
         self._candidate_y = y_tensor
-        self._candidate_x_cat = None  # no categorical features
+        self._candidate_x_cat = None
 
-        # Early-stopping bookkeeping
-        best_metric = math.inf
-        best_state = None
-        patience_left = (
-            self.early_stopping_rounds
-            if (self.use_early_stopping and X_val is not None)
-            else None
-        )
-        self.best_iteration = self.epochs - 1  # will be overwritten if ES triggers
+        # Use base training
+        self._fit_pytorch_model(X, y, eval_set)
 
-        # ----------------------------------------------------------------
-        for epoch in range(self.epochs):
-            self.model.train()
-
-            # Shuffle mini-batches
-            indices = rng.permutation(n_train)
-            for start in range(0, n_train, self.batch_size):
-                batch_idx = indices[start : start + self.batch_size]
-                xb = X_tensor[batch_idx]
-                yb = y_tensor[batch_idx]
-
-                # Build candidate memory WITHOUT current batch
-                mask = torch.ones(n_train, dtype=torch.bool, device=self.device)
-                mask[batch_idx] = False
-                candidate_x_num = X_tensor[mask]
-                candidate_y = y_tensor[mask]
-
-                preds = self.model(
-                    x_num=xb,
-                    x_cat=None,
-                    y=yb,
-                    candidate_x_num=candidate_x_num,
-                    candidate_x_cat=None,
-                    candidate_y=candidate_y,
-                    context_size=self.context_size,
-                    is_train=True,
-                ).squeeze(-1)
-
-                loss = criterion(preds, yb)
-
-                optimiser.zero_grad(set_to_none=True)
-                loss.backward()
-                optimiser.step()
-
-            # ---------------- validation / early stopping ---------------
-            if X_val is not None:
-                self.model.eval()
-                with torch.no_grad():
-                    val_preds = self._predict_tensor(X_val)
-                    val_rmse = float(
-                        torch.sqrt(
-                            criterion(
-                                torch.as_tensor(val_preds, device=self.device),
-                                y_val,
-                            )
-                        ).item()
-                    )
-
-                if val_rmse < best_metric:
-                    best_metric = val_rmse
-                    best_state = {
-                        k: v.detach().cpu().clone()
-                        for k, v in self.model.state_dict().items()
-                    }
-                    self.best_iteration = epoch
-                    if patience_left is not None:
-                        patience_left = self.early_stopping_rounds
-                else:
-                    if patience_left is not None:
-                        patience_left -= 1
-                        if patience_left <= 0:
-                            if self.verbose:
-                                print("Early stopping triggered.")
-                            break
-
-        # Reload best weights (if we used validation / ES)
-        if best_state is not None:
-            self.model.load_state_dict(best_state)
-
-    # ------------------------------------------------------------------ #
-    #  Inference helpers
-    # ------------------------------------------------------------------ #
-    def _predict_tensor(self, X_tensor: torch.Tensor) -> np.ndarray:
-        """
-        Internal helper that assumes pre-processed *tensor* input and returns
-        a NumPy array on CPU.
-        """
+    # Custom predict_tensor for inference with candidates
+    def _predict_tensor(self, X_tensor):
         self.model.eval()
         preds = []
         with torch.no_grad():
@@ -278,7 +236,7 @@ class TabRRegressor(BaseTabularRegressor):
                     x_cat=None,
                     y=None,
                     candidate_x_num=self._candidate_x_num,
-                    candidate_x_cat=None,
+                    candidate_x_cat=self._candidate_x_cat,
                     candidate_y=self._candidate_y,
                     context_size=self.context_size,
                     is_train=False,

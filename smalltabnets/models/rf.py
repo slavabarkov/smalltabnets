@@ -1,3 +1,5 @@
+from typing import Optional
+
 from sklearn.ensemble import RandomForestRegressor as SklearnRandomForestRegressor
 
 from .base import BaseTabularRegressor
@@ -5,6 +7,37 @@ from .base import BaseTabularRegressor
 
 class RandomForestRegressor(BaseTabularRegressor):
     """Random Forest regressor with unified interface."""
+
+    def __init__(
+        self,
+        # Base parameters
+        epochs=256,
+        learning_rate=0.2,
+        batch_size=256,
+        use_early_stopping=False,
+        early_stopping_rounds=None,
+        # Dimensionality reduction
+        use_pca: bool = False,
+        n_pca_components: Optional[int] = None,
+        # Misc
+        device=None,
+        random_state=42,
+        verbose=0,
+        **kwargs
+    ):
+        super().__init__(
+            epochs=epochs,
+            learning_rate=learning_rate,
+            batch_size=batch_size,
+            use_early_stopping=use_early_stopping,
+            early_stopping_rounds=early_stopping_rounds,
+            device=device,
+            random_state=random_state,
+            verbose=verbose,
+            use_pca=use_pca,
+            n_pca_components=n_pca_components,
+            **kwargs,
+        )
 
     def _get_expected_params(self):
         return [
@@ -24,7 +57,6 @@ class RandomForestRegressor(BaseTabularRegressor):
 
         # RandomForest doesn't support early stopping
         params.pop("early_stopping_rounds", None)
-        print("Creating RandomForestRegressor with params:", params)
         return SklearnRandomForestRegressor(**params)
 
     def _fit_model(self, X, y, eval_set=None):

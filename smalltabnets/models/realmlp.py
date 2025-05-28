@@ -1,3 +1,5 @@
+from typing import Optional
+
 import numpy as np
 from pytabkit import RealMLP_TD_Regressor
 
@@ -15,6 +17,9 @@ class RealMLPRegressor(BaseTabularRegressor):
         batch_size=256,
         use_early_stopping=False,
         early_stopping_rounds=None,
+        # Dimensionality reduction
+        use_pca: bool = False,
+        n_pca_components: Optional[int] = None,
         # Only store params we need to reference
         n_hidden_layers=3,
         hidden_width=256,
@@ -39,6 +44,8 @@ class RealMLPRegressor(BaseTabularRegressor):
             device=device,
             random_state=random_state,
             verbose=verbose,
+            use_pca=use_pca,
+            n_pca_components=n_pca_components,
             **kwargs
         )
 
