@@ -1,71 +1,54 @@
-# ---------------------------------------------------------------
-#  FT-Transformer on LimeSoDa
-# ---------------------------------------------------------------
 model: ft_transformer.FTTransformerRegressor
 random_state: 42
 results_dir: results/limesoda_fttransformer_optimize
 
-# -------------------- fixed (non-optimised) --------------------
 fixed_parameters:
-  epochs: 256
+  epochs: 1000
   use_early_stopping: true
   early_stopping_rounds: 16
-  device: cuda               # change to "cpu" if you do not have a GPU
+  device: cuda
   random_state: 42
-  token_bias: true
-  prenormalization: false
-  initialization: kaiming
+  use_pca: false
+  n_pca_components: null
   feature_scaling: robust
   standardize_targets: true
 
-
-
-# ------------- hyper-parameter search space --------------------
 hyperparameter_grid:
   learning_rate:
     type: float
     log: true
     low: 0.0001
     high: 0.01
-
   n_layers:
     type: int
-    low: 2
-    high: 6
-
-  d_token:                 # multiples of 32 make life easier
+    low: 1
+    high: 4
+  d_token:
     type: categorical
-    choices: [64, 96, 128, 160, 192, 224, 256]
-
+    choices: [16, 32, 48, 64]
   n_heads:
     type: categorical
-    choices: [4, 8]
-
+    choices: [2, 4]
   d_ffn_factor:
     type: float
     low: 1.0
     high: 4.0
-
   attention_dropout:
     type: float
     low: 0.0
     high: 0.3
-
   ffn_dropout:
     type: float
     low: 0.0
     high: 0.3
-
   residual_dropout:
     type: float
     low: 0.0
     high: 0.3
-
   batch_size:
     type: categorical
-    choices: [16, 32, 64]
+    choices: [4, 8, 16, 32]
 
-# -------------------------- datasets ---------------------------
 datasets:
   - dataset: B.204
     target: SOC_target
@@ -122,7 +105,6 @@ datasets:
   - dataset: NSW.52
     target: Clay_target
 
-# ------------------- optimisation / CV setup -------------------
 optimization:
   n_trials: 100
   sampler: TPE
@@ -132,7 +114,6 @@ optimization:
     outer_folds: 5
     inner_folds: 5
 
-# -------------- outer-fold training strategies -----------------
 outer_train_strategies:
   agg_epochs_mean:
     enabled: true

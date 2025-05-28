@@ -1,59 +1,46 @@
-# ---------------------------------------------------------------
-#  AutoInt on LimeSoDa
-# ---------------------------------------------------------------
 model: autoint.AutoIntRegressor
 random_state: 42
 results_dir: results/limesoda_autoint_optimize
 
-# -------------------- fixed (non-optimised) ---------------------
 fixed_parameters:
-  epochs: 256
+  epochs: 1000
   use_early_stopping: true
   early_stopping_rounds: 16
-  device: cuda        # change to "cpu" if no GPU is available
+  device: cuda
   random_state: 42
-  activation: relu
-  prenormalization: false
+  use_pca: false
+  n_pca_components: null
   feature_scaling: robust
   standardize_targets: true
 
-
-# --------------- hyper-parameter search space ------------------
 hyperparameter_grid:
   learning_rate:
     type: float
     log: true
     low: 0.0001
     high: 0.01
-
   n_layers:
     type: int
     low: 1
     high: 4
-
   d_token:
     type: categorical
-    choices: [16, 32, 64]
-
-  n_heads:             # must divide d_token – `2` is always safe
+    choices: [16, 32, 48, 64]
+  n_heads:
     type: categorical
-    choices: [2]
-
+    choices: [2, 4]
   attention_dropout:
     type: float
     low: 0.0
     high: 0.3
-
   residual_dropout:
     type: float
     low: 0.0
     high: 0.3
-
   batch_size:
     type: categorical
-    choices: [16, 32, 64]
+    choices: [4, 8, 16, 32]
 
-# -------------------------- datasets ---------------------------
 datasets:
   - dataset: B.204
     target: SOC_target
@@ -110,7 +97,6 @@ datasets:
   - dataset: NSW.52
     target: Clay_target
 
-# ------------------- optimisation / CV setup -------------------
 optimization:
   n_trials: 100
   sampler: TPE
@@ -120,7 +106,6 @@ optimization:
     outer_folds: 5
     inner_folds: 5
 
-# -------------- outer-fold training strategies -----------------
 outer_train_strategies:
   agg_epochs_mean:
     enabled: true

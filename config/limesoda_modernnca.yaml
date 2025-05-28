@@ -1,62 +1,50 @@
-# ------------------------------------------------------------------
-#  Modern-NCA on LimeSoDa
-# ------------------------------------------------------------------
 model: modernnca.ModernNCARegressor
 random_state: 42
 results_dir: results/limesoda_modernnca_optimize
 
-# ----------------------- fixed parameters -------------------------
 fixed_parameters:
-  epochs: 256
-  use_early_stopping: true           # enable patience–based early stop
+  epochs: 1000
+  use_early_stopping: true
   early_stopping_rounds: 16
-  device: cuda                       # change to "cpu" if no GPU
+  device: cuda
   random_state: 42
-  d_num: 0                           # treat all columns as “raw” features
-  sample_rate: 0.8                   # % of retrieval memory to sample
+  use_pca: false
+  n_pca_components: null
   feature_scaling: robust
   standardize_targets: true
+  use_embeddings: false
+  embedding_type: piecewise_linear
+  embedding_dim: 16
 
-  
-
-# --------------------- hyper-parameter search ---------------------
 hyperparameter_grid:
-  learning_rate:                     # Adam learning-rate
+  learning_rate:
     type: float
     log: true
     low: 0.0001
     high: 0.01
-
-  dim:                               # encoder output dimension
-    type: int
-    low: 64
-    high: 256
-
-  d_block:                           # width of blocks in post-encoder
+  dim: # Embedding dimension for similarity search
     type: categorical
-    choices: [128, 256, 512]
-
-  n_blocks:                          # number of residual blocks
+    choices: [64, 128, 256]
+  d_block:
+    type: categorical
+    choices: [64, 128, 256, 512]
+  n_blocks:
     type: int
-    low: 0
-    high: 3
-
+    low: 2
+    high: 4
   dropout:
     type: float
     low: 0.0
     high: 0.3
-
-  temperature:                       # distance softmax temperature
+  temperature:
     type: float
     log: true
     low: 0.1
     high: 5.0
-
   batch_size:
     type: categorical
-    choices: [16, 32, 64]
+    choices: [4, 8, 16, 32]
 
-# --------------------------- datasets ------------------------------
 datasets:
   - dataset: B.204
     target: SOC_target
@@ -113,7 +101,6 @@ datasets:
   - dataset: NSW.52
     target: Clay_target
 
-# ----------------------- optimisation setup ------------------------
 optimization:
   n_trials: 100
   sampler: TPE
@@ -123,7 +110,6 @@ optimization:
     outer_folds: 5
     inner_folds: 5
 
-# ------------------ outer-fold training strategies -----------------
 outer_train_strategies:
   agg_epochs_mean:
     enabled: true

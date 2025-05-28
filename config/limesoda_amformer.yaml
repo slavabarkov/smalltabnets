@@ -1,66 +1,55 @@
-# ---------------------------------------------------------------
-#  AM-Former on LimeSoDa
-# ---------------------------------------------------------------
 model: amformer.AMFormerRegressor
 random_state: 42
 results_dir: results/limesoda_amformer_optimize
 
-# ------------------- fixed (non-optimised) ----------------------
 fixed_parameters:
-  epochs: 256
+  epochs: 1000
   use_early_stopping: true
   early_stopping_rounds: 16
-  device: cuda            # change to "cpu" if no GPU is available
+  device: cuda
   random_state: 42
-  use_cls_token: false
-  cluster: true
-  target_mode: null
-  token_descent: false
-  use_prod: true
+  use_pca: false
+  n_pca_components: null
   feature_scaling: robust
   standardize_targets: true
 
-
-# ---------------- hyper-parameter search space ------------------
 hyperparameter_grid:
   learning_rate:
     type: float
     log: true
     low: 0.0001
     high: 0.01
-
   dim:
     type: categorical
-    choices: [32, 64, 128]
-
+    choices: [16, 32, 48, 64]
   depth:
     type: int
     low: 1
     high: 4
-
   heads:
     type: categorical
     choices: [2, 4]
-
   attn_dropout:
     type: float
     low: 0.0
     high: 0.3
-
   ff_dropout:
     type: float
     low: 0.0
     high: 0.3
-
   groups:
     type: categorical
     choices: [1, 2, 4]
-
   batch_size:
     type: categorical
-    choices: [16, 32, 64]
+    choices: [4, 8, 16, 32]
+  sum_num_per_group: # Tokens per sum cluster
+    type: categorical
+    choices: [1, 2, 4]
+  prod_num_per_group: # Tokens per product cluster
+    type: categorical
+    choices: [1, 2, 4]
 
-# -------------------------- datasets ---------------------------
 datasets:
   - dataset: B.204
     target: SOC_target
@@ -117,7 +106,6 @@ datasets:
   - dataset: NSW.52
     target: Clay_target
 
-# ------------------- optimisation / CV setup -------------------
 optimization:
   n_trials: 100
   sampler: TPE
@@ -127,7 +115,6 @@ optimization:
     outer_folds: 5
     inner_folds: 5
 
-# -------------- outer-fold training strategies -----------------
 outer_train_strategies:
   agg_epochs_mean:
     enabled: true

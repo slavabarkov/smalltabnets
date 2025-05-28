@@ -1,64 +1,55 @@
-# ------------------------------------------------------------------
-#  TabR on LimeSoDa
-# ------------------------------------------------------------------
 model: tabr.TabRRegressor
 random_state: 42
 results_dir: results/limesoda_tabr_optimize
 
-# ---------------------- fixed (non-optimised) ----------------------
 fixed_parameters:
-  epochs: 256
+  epochs: 1000
   use_early_stopping: true
   early_stopping_rounds: 16
-  device: cuda               # change to "cpu" if no GPU
+  device: cuda
   random_state: 42
-  # sensible TabR defaults
-  context_size: 16
-  d_multiplier: 2.0
-  mixer_normalization: auto
-  dropout1: dropout0         # as in the original paper
+  use_pca: false
+  n_pca_components: null
   feature_scaling: robust
   standardize_targets: true
+  use_embeddings: false
+  embedding_type: null
+  embedding_dim: null
 
 
-# ------------------- hyper-parameter search space -----------------
 hyperparameter_grid:
   learning_rate:
     type: float
     log: true
     low: 0.0001
     high: 0.01
-
   d_main:
-    type: int
-    low: 32
-    high: 256
-
+    type: categorical
+    choices: [64, 128, 256, 512]
+  d_multiplier:
+    type: float
+    low: 1.5
+    high: 4.0
   encoder_n_blocks:
     type: int
     low: 0
     high: 4
-
   predictor_n_blocks:
     type: int
     low: 1
     high: 4
-
   dropout0:
     type: float
     low: 0.0
     high: 0.3
-
   context_dropout:
     type: float
     low: 0.0
     high: 0.3
-
   batch_size:
     type: categorical
-    choices: [16, 32, 64]
+    choices: [4, 8, 16, 32]
 
-# --------------------------- datasets ------------------------------
 datasets:
   - dataset: B.204
     target: SOC_target
@@ -115,7 +106,6 @@ datasets:
   - dataset: NSW.52
     target: Clay_target
 
-# ------------------ optimisation / cross-validation ----------------
 optimization:
   n_trials: 100
   sampler: TPE
@@ -125,7 +115,6 @@ optimization:
     outer_folds: 5
     inner_folds: 5
 
-# ----------------- outer-fold training strategies ------------------
 outer_train_strategies:
   agg_epochs_mean:
     enabled: true

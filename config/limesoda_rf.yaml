@@ -8,6 +8,10 @@ fixed_parameters:
   criterion: squared_error
   random_state: 42
   n_jobs: -1
+  use_pca: false
+  n_pca_components: null
+  feature_scaling: null
+  standardize_targets: false
 
 hyperparameter_grid:
   max_depth:
@@ -93,18 +97,18 @@ optimization:
     inner_folds: 5
 
 outer_train_strategies:
-  agg_epochs_mean: 
+  agg_epochs_mean:
     enabled: false
-  agg_epochs_mean_std: 
+  agg_epochs_mean_std:
     enabled: false
-  agg_epochs_percentile: 
+  agg_epochs_percentile:
     enabled: false
-  best_inner_model: 
+  best_inner_model:
     enabled: true
-  full_train: 
+  full_train:
     enabled: true
     epochs: 1000
-  early_stopping: 
+  early_stopping:
     enabled: false
-  ensemble: 
+  ensemble:
     enabled: true

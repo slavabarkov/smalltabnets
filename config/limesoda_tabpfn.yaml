@@ -4,7 +4,14 @@ results_dir: results/limesoda_tabpfn_optimize
 
 fixed_parameters:
   epochs: 32
+  use_early_stopping: false
+  early_stopping_rounds: null
+  device: cuda
   random_state: 42
+  use_pca: false
+  n_pca_components: null
+  feature_scaling: null
+  standardize_targets: null
 
 datasets:
   - dataset: B.204

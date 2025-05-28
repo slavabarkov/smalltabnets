@@ -8,13 +8,16 @@ fixed_parameters:
   early_stopping_rounds: 256
   device: cuda:0
   random_state: 42
-  verbosity: -1
+  use_pca: false
+  n_pca_components: null
+  feature_scaling: robust # we use realmlp scaler
+  standardize_targets: true # we use realmlp standrdizer
 
 hyperparameter_grid:
   learning_rate:
     type: float
     low: 0.0001
-    high: 0.005
+    high: 0.01
     log: true
   wd:
     type: float
@@ -24,10 +27,10 @@ hyperparameter_grid:
   n_hidden_layers:
     type: int
     low: 2
-    high: 6
+    high: 4
   hidden_width:
     type: categorical
-    choices: [128, 256, 512, 768]
+    choices: [64, 128, 256, 512]
   p_drop:
     type: float
     low: 0.0
@@ -102,20 +105,20 @@ optimization:
     inner_folds: 5
 
 outer_train_strategies:
-  agg_epochs_mean: 
+  agg_epochs_mean:
     enabled: true
-  agg_epochs_mean_std: 
+  agg_epochs_mean_std:
     enabled: true
-  agg_epochs_percentile: 
+  agg_epochs_percentile:
     enabled: true
     percentile: 90
-  best_inner_model: 
+  best_inner_model:
     enabled: true
-  full_train: 
+  full_train:
     enabled: true
     epochs: 256
-  early_stopping: 
+  early_stopping:
     enabled: true
     val_frac: 0.2
-  ensemble: 
+  ensemble:
     enabled: true
