@@ -4,6 +4,7 @@ import math
 from typing import Optional, Union
 
 import numpy as np
+import rtdl_num_embeddings
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -205,11 +206,11 @@ class MLP(nn.Module):
 _CUSTOM_MODULES = {
     x.__name__: x
     for x in [
-        LinearEmbeddings,
-        LREmbeddings,
-        PLREmbeddings,
+        rtdl_num_embeddings.LinearEmbeddings,
+        rtdl_num_embeddings.LinearReLUEmbeddings,
+        rtdl_num_embeddings.PeriodicEmbeddings,
+        rtdl_num_embeddings.PiecewiseLinearEmbeddings,
         MLP,
-        PBLDEmbeddings,
     ]
 }
 
@@ -266,6 +267,7 @@ class ModernNCA(nn.Module):
         d_block: int,
         n_blocks: int,
         num_embeddings: Optional[dict],
+        bins,
         temperature: float = 1.0,
         sample_rate: float = 0.8,
     ) -> None:
@@ -290,11 +292,24 @@ class ModernNCA(nn.Module):
                 nn.BatchNorm1d(dim),
             )
         self.encoder = nn.Linear(self.d_in, dim)
-        self.num_embeddings = (
-            None
-            if num_embeddings is None
-            else make_module(num_embeddings, n_features=d_num)
-        )
+
+        if num_embeddings is None:
+            assert bins is None
+            self.num_embeddings = None
+        else:
+            if bins is None:
+                self.num_embeddings = make_module(
+                    spec=num_embeddings.pop("type"),
+                    **num_embeddings,
+                    n_features=d_num,
+                )
+            else:
+                assert num_embeddings["type"].startswith("PiecewiseLinearEmbeddings")
+                self.num_embeddings = make_module(
+                    spec=num_embeddings.pop("type"),
+                    **num_embeddings,
+                    bins=bins,
+                )
 
     def make_layer(self):
         block = MLP_Block(self.dim, self.d_block, self.dropout)

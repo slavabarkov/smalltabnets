@@ -1,15 +1,16 @@
 import math
 from typing import Optional, Union
 
-from .delu.nn import Lambda
-from .delu.tensor_ops import iter_batches
-
 import numpy as np
+import rtdl_num_embeddings
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
 from torch.nn.parameter import Parameter
+
+from .delu.nn import Lambda
+from .delu.tensor_ops import iter_batches
 
 
 def _initialize_embeddings(weight: Tensor, d: Optional[int]) -> None:
@@ -206,11 +207,11 @@ class MLP(nn.Module):
 _CUSTOM_MODULES = {
     x.__name__: x
     for x in [
-        LinearEmbeddings,
-        LREmbeddings,
-        PLREmbeddings,
+        rtdl_num_embeddings.LinearEmbeddings,
+        rtdl_num_embeddings.LinearReLUEmbeddings,
+        rtdl_num_embeddings.PeriodicEmbeddings,
+        rtdl_num_embeddings.PiecewiseLinearEmbeddings,
         MLP,
-        PBLDEmbeddings,
     ]
 }
 
@@ -265,6 +266,7 @@ class TabR(nn.Module):
         n_classes: Optional[int],
         #
         num_embeddings: Optional[dict],  # lib.deep.ModuleSpec
+        bins,
         d_main: int,
         d_multiplier: float,
         encoder_n_blocks: int,
@@ -291,11 +293,28 @@ class TabR(nn.Module):
             dropout1 = dropout0
         self.n_classes = n_classes
 
-        self.num_embeddings = (
-            None
-            if num_embeddings is None
-            else make_module(num_embeddings, n_features=n_num_features)
-        )
+        if n_num_features == 0:
+            assert bins is None
+            self.num_embeddings = None
+
+        elif num_embeddings is None:
+            assert bins is None
+            self.num_embeddings = None
+
+        else:
+            if bins is None:
+                self.num_embeddings = make_module(
+                    spec=num_embeddings.pop("type"),
+                    **num_embeddings,
+                    n_features=n_num_features,
+                )
+            else:
+                assert num_embeddings["type"].startswith("PiecewiseLinearEmbeddings")
+                self.num_embeddings = make_module(
+                    spec=num_embeddings.pop("type"),
+                    **num_embeddings,
+                    bins=bins,
+                )
 
         # >>> E
         d_in = (
