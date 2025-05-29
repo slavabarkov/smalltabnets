@@ -10,25 +10,7 @@ class RandomForestRegressor(BaseTabularRegressor):
 
     def __init__(
         self,
-        # Base training parameters
-        epochs: Optional[int] = None,
-        learning_rate: Optional[float] = None,
-        batch_size: Optional[int] = None,
-        # Base early stopping parameters
-        use_early_stopping: Optional[bool] = None,
-        early_stopping_rounds: Optional[int] = None,
-        # Base preprocessing parameters
-        feature_scaling: bool = "robust",
-        standardize_targets: bool = True,
-        clip_features: bool = False,
-        clip_outputs: bool = False,
-        # Base dimensionality reduction parameters
-        use_pca: bool = False,
-        n_pca_components: Optional[int] = None,
-        # Base system and utility parameters
-        device: Optional[str] = "cuda",
-        random_state: int = 42,
-        verbose: int = 0,
+        *,
         # RF specific parameters
         n_estimators: int = 1000,
         bootstrap: bool = True,
@@ -38,6 +20,8 @@ class RandomForestRegressor(BaseTabularRegressor):
         min_samples_split: int = 2,
         min_samples_leaf: int = 1,
         max_features: Optional[int] = None,
+        # Accept all base parameters via **kwargs
+        **kwargs,
     ):
         self.n_estimators = n_estimators
         self.bootstrap = bootstrap
@@ -48,27 +32,10 @@ class RandomForestRegressor(BaseTabularRegressor):
         self.min_samples_leaf = min_samples_leaf
         self.max_features = max_features
 
-        super().__init__(
-            # Base training parameters
-            epochs=self.n_estimators,
-            learning_rate=None,
-            batch_size=None,
-            # Base early stopping parameters
-            use_early_stopping=None,  # RF does not use early stopping
-            early_stopping_rounds=None,  # RF does not use early stopping
-            # Base preprocessing parameters
-            feature_scaling=feature_scaling,
-            standardize_targets=standardize_targets,
-            clip_features=clip_features,
-            clip_outputs=clip_outputs,
-            # Base dimensionality reduction parameters
-            use_pca=use_pca,
-            n_pca_components=n_pca_components,
-            # Base system and utility parameters
-            device=device,
-            random_state=random_state,
-            verbose=verbose,
-        )
+        kwargs.setdefault("epochs", self.n_estimators)
+
+        # Pass all base parameters to parent
+        super().__init__(**kwargs)
 
     def _create_model(self, n_features):
         return SklearnRandomForestRegressor(

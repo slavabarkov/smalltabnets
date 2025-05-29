@@ -13,25 +13,7 @@ from .base import BaseTabularRegressor
 class TabRRegressor(BaseTabularRegressor):
     def __init__(
         self,
-        # Base training parameters
-        epochs: int = 256,
-        learning_rate: float = 1e-3,
-        batch_size: int = 16,
-        # Base early stopping parameters
-        use_early_stopping: bool = True,
-        early_stopping_rounds: Optional[int] = 16,
-        # Base preprocessing parameters
-        feature_scaling: bool = "robust",
-        standardize_targets: bool = True,
-        clip_features: bool = False,
-        clip_outputs: bool = False,
-        # Base dimensionality reduction parameters
-        use_pca: bool = False,
-        n_pca_components: Optional[int] = None,
-        # Base system and utility parameters
-        device: Optional[str] = "cuda",
-        random_state: int = 42,
-        verbose: int = 0,
+        *,
         # TabR specific parameters
         d_main: int = 64,
         d_multiplier: float = 2.0,
@@ -48,8 +30,10 @@ class TabRRegressor(BaseTabularRegressor):
         candidate_encoding_batch_size: Optional[int] = None,
         # Embeddings
         use_embeddings: bool = True,
-        embedding_type: str = "piecewise_linear",  # or "linear", "lr", "plr", etc.
+        embedding_type: str = "piecewise_linear",  # "piecewise_linear" or "linear"
         embedding_dim: int = 16,
+        # Accept all base parameters via **kwargs
+        **kwargs,
     ):
         # Store TabR specific parameters
         self.d_main = d_main
@@ -73,27 +57,8 @@ class TabRRegressor(BaseTabularRegressor):
         self.num_embeddings = None
         self.bins = None
 
-        super().__init__(
-            # Base training parameters
-            epochs=epochs,
-            learning_rate=learning_rate,
-            batch_size=batch_size,
-            # Base early stopping parameters
-            use_early_stopping=use_early_stopping,
-            early_stopping_rounds=early_stopping_rounds,
-            # Base preprocessing parameters
-            feature_scaling=feature_scaling,
-            standardize_targets=standardize_targets,
-            clip_features=clip_features,
-            clip_outputs=clip_outputs,
-            # Base dimensionality reduction parameters
-            use_pca=use_pca,
-            n_pca_components=n_pca_components,
-            # Base system and utility parameters
-            device=device,
-            random_state=random_state,
-            verbose=verbose,
-        )
+        # Pass all base parameters to parent
+        super().__init__(**kwargs)
 
     def _create_model(self, n_features: int):
         """

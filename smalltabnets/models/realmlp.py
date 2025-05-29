@@ -12,31 +12,15 @@ class RealMLPRegressor(BaseTabularRegressor):
 
     def __init__(
         self,
-        # Base training parameters
-        epochs: int = 256,
-        learning_rate: float = 1e-3,
-        batch_size: int = 16,
-        # Base early stopping parameters
-        use_early_stopping: bool = True,
-        early_stopping_rounds: Optional[int] = 16,
-        # Base preprocessing parameters
-        feature_scaling: bool = "robust",
-        standardize_targets: bool = True,
-        clip_features: bool = False,
-        clip_outputs: bool = False,
-        # Base dimensionality reduction parameters
-        use_pca: bool = False,
-        n_pca_components: Optional[int] = None,
-        # Base system and utility parameters
-        device: Optional[str] = "cuda",
-        random_state: int = 42,
-        verbose: int = 0,
+        *,
         # RealMLP specific parameters
         # Only store params we reference
         n_hidden_layers=3,
         hidden_width=256,
         wd=1e-2,
         p_drop=0.0,
+        # Accept all base parameters via **kwargs
+        **kwargs,
     ):
         # Store RealMLP-specific hyper-parameters
         self.n_hidden_layers = n_hidden_layers
@@ -46,27 +30,8 @@ class RealMLPRegressor(BaseTabularRegressor):
         self.wd = wd
         self.p_drop = p_drop
 
-        super().__init__(
-            # Base training parameters
-            epochs=epochs,
-            learning_rate=learning_rate,
-            batch_size=batch_size,
-            # Base early stopping parameters
-            use_early_stopping=use_early_stopping,
-            early_stopping_rounds=early_stopping_rounds,
-            # Base preprocessing parameters
-            feature_scaling=feature_scaling,
-            standardize_targets=standardize_targets,
-            clip_features=clip_features,
-            clip_outputs=clip_outputs,
-            # Base dimensionality reduction parameters
-            use_pca=use_pca,
-            n_pca_components=n_pca_components,
-            # Base system and utility parameters
-            device=device,
-            random_state=random_state,
-            verbose=verbose,
-        )
+        # Pass all base parameters to parent
+        super().__init__(**kwargs)
 
     def _create_model(self, n_features):
         return RealMLP_TD_Regressor(

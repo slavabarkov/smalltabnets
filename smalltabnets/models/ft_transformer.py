@@ -10,25 +10,7 @@ from .base import BaseTabularRegressor
 class FTTransformerRegressor(BaseTabularRegressor):
     def __init__(
         self,
-        # Base training parameters
-        epochs: int = 256,
-        learning_rate: float = 1e-3,
-        batch_size: int = 16,
-        # Base early stopping parameters
-        use_early_stopping: bool = True,
-        early_stopping_rounds: Optional[int] = 16,
-        # Base preprocessing parameters
-        feature_scaling: bool = "robust",
-        standardize_targets: bool = True,
-        clip_features: bool = False,
-        clip_outputs: bool = False,
-        # Base dimensionality reduction parameters
-        use_pca: bool = False,
-        n_pca_components: Optional[int] = None,
-        # Base system and utility parameters
-        device: Optional[str] = "cuda",
-        random_state: int = 42,
-        verbose: int = 0,
+        *,
         # FT-Transformer specific parameters
         token_bias: bool = True,
         n_layers: int = 4,
@@ -43,8 +25,10 @@ class FTTransformerRegressor(BaseTabularRegressor):
         initialization: str = "kaiming",
         kv_compression: Optional[float] = None,
         kv_compression_sharing: Optional[str] = None,
+        # Accept all base parameters via **kwargs
+        **kwargs
     ):
-        # Store FT-Transformer specific parameters
+        # Store model-specific parameters
         self.token_bias = token_bias
         self.n_layers = n_layers
         self.d_token = d_token
@@ -59,27 +43,8 @@ class FTTransformerRegressor(BaseTabularRegressor):
         self.kv_compression = kv_compression
         self.kv_compression_sharing = kv_compression_sharing
 
-        super().__init__(
-            # Base training parameters
-            epochs=epochs,
-            learning_rate=learning_rate,
-            batch_size=batch_size,
-            # Base early stopping parameters
-            use_early_stopping=use_early_stopping,
-            early_stopping_rounds=early_stopping_rounds,
-            # Base preprocessing parameters
-            feature_scaling=feature_scaling,
-            standardize_targets=standardize_targets,
-            clip_features=clip_features,
-            clip_outputs=clip_outputs,
-            # Base dimensionality reduction parameters
-            use_pca=use_pca,
-            n_pca_components=n_pca_components,
-            # Base system and utility parameters
-            device=device,
-            random_state=random_state,
-            verbose=verbose,
-        )
+        # Pass all base parameters to parent
+        super().__init__(**kwargs)
 
     def _create_model(self, n_features: int) -> nn.Module:
         model = FTTransformer(

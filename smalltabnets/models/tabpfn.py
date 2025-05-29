@@ -11,25 +11,7 @@ class TabPFNRegressor(BaseTabularRegressor):
 
     def __init__(
         self,
-        # Base training parameters
-        epochs: Optional[int] = None,
-        learning_rate: Optional[float] = None,
-        batch_size: Optional[int] = None,
-        # Base early stopping parameters
-        use_early_stopping: Optional[bool] = None,
-        early_stopping_rounds: Optional[int] = None,
-        # Base preprocessing parameters
-        feature_scaling: bool = None,
-        standardize_targets: bool = False,
-        clip_features: bool = False,
-        clip_outputs: bool = False,
-        # Base dimensionality reduction parameters
-        use_pca: bool = False,
-        n_pca_components: Optional[int] = None,
-        # Base system and utility parameters
-        device: Optional[str] = "cuda",
-        random_state: int = 42,
-        verbose: int = 0,
+        *,
         # TabPFN specific parameters
         n_estimators: int = 32,
         ignore_pretraining_limits: bool = True,
@@ -38,6 +20,8 @@ class TabPFNRegressor(BaseTabularRegressor):
         fingerprint_feature: bool = True,
         polynomial_features: str = "no",
         subsample_samples: Optional[int] = None,
+        # Accept all base parameters via **kwargs
+        **kwargs,
     ):
         self.n_estimators = n_estimators
         self.ignore_pretraining_limits = ignore_pretraining_limits
@@ -55,27 +39,10 @@ class TabPFNRegressor(BaseTabularRegressor):
             SUBSAMPLE_SAMPLES=self.subsample_samples,
         )
 
-        super().__init__(
-            # Base training parameters
-            epochs=self.n_estimators,
-            learning_rate=None,
-            batch_size=None,
-            # Base early stopping parameters
-            use_early_stopping=None,
-            early_stopping_rounds=None,
-            # Base preprocessing parameters
-            feature_scaling=feature_scaling,
-            standardize_targets=standardize_targets,
-            clip_features=clip_features,
-            clip_outputs=clip_outputs,
-            # Base dimensionality reduction parameters
-            use_pca=use_pca,
-            n_pca_components=n_pca_components,
-            # Base system and utility parameters
-            device=device,
-            random_state=random_state,
-            verbose=verbose,
-        )
+        kwargs.setdefault("epochs", self.n_estimators)
+
+        # Pass all base parameters to parent
+        super().__init__(**kwargs)
 
     def _create_model(self, n_features):
         return PriorLabsTabPFNRegressor(

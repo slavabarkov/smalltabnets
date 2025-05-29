@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Literal, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -26,36 +26,45 @@ class BaseTabularRegressor(BaseEstimator, RegressorMixin, ABC):
     - _predict_model(): Model-specific prediction logic
     """
 
-    def __init__(self, **kwargs):
-        """
-        Initialize base regressor with common parameters.
-
-        Subclasses can accept additional parameters in kwargs.
-        """
-        # Training
-        self.epochs = kwargs.pop("epochs", 256)
-        self.learning_rate = kwargs.pop("learning_rate", 1e-3)
-        self.batch_size = kwargs.pop("batch_size", 16)
-
-        # Early stopping
-        self.use_early_stopping = kwargs.pop("use_early_stopping", True)
-        self.early_stopping_rounds = kwargs.pop("early_stopping_rounds", 16)
-
-        # Preprocessing
-        # Feature scaling could be "standard", "robust", or None
-        self.feature_scaling = kwargs.pop("feature_scaling", None)
-        self.standardize_targets = kwargs.pop("standardize_targets", False)
-        self.clip_features = kwargs.pop("clip_features", False)
-        self.clip_outputs = kwargs.pop("clip_outputs", False)
-
-        # Dimensionality reduction
-        self.use_pca = kwargs.pop("use_pca", False)
-        self.n_pca_components = kwargs.pop("n_pca_components", 0.95)
-
-        # System and utility
-        self.device = kwargs.pop("device", "cuda")
-        self.random_state = kwargs.pop("random_state", None)
-        self.verbose = kwargs.pop("verbose", 0)
+    def __init__(
+        self,
+        *,
+        # Base training parameters
+        epochs: int = 256,
+        learning_rate: float = 1e-3,
+        batch_size: Optional[int] = 16,
+        # Base early stopping parameters
+        use_early_stopping: bool = True,
+        early_stopping_rounds: Optional[int] = 16,
+        # Base preprocessing parameters
+        feature_scaling: Optional[Literal["standard", "robust"]] = None,
+        standardize_targets: bool = False,
+        clip_features: bool = False,
+        clip_outputs: bool = False,
+        # Base dimensionality reduction parameters
+        use_pca: bool = False,
+        n_pca_components: Optional[Union[int, float]] = 0.95,
+        # Base system and utility parameters
+        device: str = "cuda",
+        random_state: Optional[int] = None,
+        verbose: int = 0,
+        **kwargs: Any,  # Catch unexpected parameters
+    ):
+        # Store base parameters
+        self.epochs = epochs
+        self.learning_rate = learning_rate
+        self.batch_size = batch_size
+        self.use_early_stopping = use_early_stopping
+        self.early_stopping_rounds = early_stopping_rounds
+        self.feature_scaling = feature_scaling
+        self.standardize_targets = standardize_targets
+        self.clip_features = clip_features
+        self.clip_outputs = clip_outputs
+        self.use_pca = use_pca
+        self.n_pca_components = n_pca_components
+        self.device = device
+        self.random_state = random_state
+        self.verbose = verbose
 
         # Fail if unexpected kwargs remain
         if kwargs:
