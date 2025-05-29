@@ -1,6 +1,6 @@
 model: tabm.TabMRegressor
 random_state: 42
-results_dir: results/limesoda_mlp_optimize
+results_dir: results/limesoda_ss_tabm_ple_optimize
 
 fixed_parameters:
   epochs: 1000
@@ -9,15 +9,14 @@ fixed_parameters:
   device: cuda
   random_state: 42
   use_pca: false
-  n_pca_components: null
-  feature_scaling: robust
   standardize_targets: true
+  feature_scaling: robust
   # Model specific parameters
-  arch_type: plain
-  k: null
-  use_embeddings: false
-  embedding_type: null
-  embedding_dim: null
+  arch_type: tabm
+  k: 32
+  use_embeddings: true
+  embedding_type: piecewise_linear
+  embedding_dim: 16
 
 hyperparameter_grid:
   learning_rate:
@@ -46,59 +45,95 @@ hyperparameter_grid:
     choices: [4, 8, 16, 32]
 
 datasets:
-  - dataset: B.204
+  - dataset: CV.98
     target: SOC_target
-  - dataset: B.204
+  - dataset: CV.98
     target: pH_target
-  - dataset: B.204
+  - dataset: CV.98
     target: Clay_target
-  - dataset: BB.250
+  - dataset: H.138
     target: SOC_target
-  - dataset: BB.250
+  - dataset: H.138
     target: pH_target
-  - dataset: BB.250
+  - dataset: H.138
     target: Clay_target
-  - dataset: BB.51
+  - dataset: MG.44
     target: SOC_target
-  - dataset: BB.51
+  - dataset: MG.44
     target: pH_target
-  - dataset: BB.51
+  - dataset: MG.44
     target: Clay_target
-  - dataset: BB.72
+  - dataset: NRW.115
     target: SOC_target
-  - dataset: BB.72
+  - dataset: NRW.115
     target: pH_target
-  - dataset: BB.72
+  - dataset: NRW.115
     target: Clay_target
-  - dataset: G.104
+  - dataset: NRW.42
     target: SOC_target
-  - dataset: G.104
+  - dataset: NRW.42
     target: pH_target
-  - dataset: G.104
+  - dataset: NRW.42
     target: Clay_target
-  - dataset: G.150
+  - dataset: NRW.62
     target: SOC_target
-  - dataset: G.150
+  - dataset: NRW.62
     target: pH_target
-  - dataset: G.150
+  - dataset: NRW.62
     target: Clay_target
-  - dataset: MG.112
+  - dataset: O.32
     target: SOC_target
-  - dataset: MG.112
+  - dataset: O.32
     target: pH_target
-  - dataset: MG.112
+  - dataset: O.32
     target: Clay_target
-  - dataset: MGS.101
+  - dataset: SC.93
     target: SOC_target
-  - dataset: MGS.101
+  - dataset: SC.93
     target: pH_target
-  - dataset: MGS.101
+  - dataset: SC.93
     target: Clay_target
-  - dataset: NSW.52
-    target: SOC_target
-  - dataset: NSW.52
+  - dataset: SL.125
+    target: SOM_target
+  - dataset: SL.125
     target: pH_target
-  - dataset: NSW.52
+  - dataset: SL.125
+    target: Clay_target
+  - dataset: SP.231
+    target: SOM_target
+  - dataset: SP.231
+    target: pH_target
+  - dataset: SP.231
+    target: Clay_target
+  - dataset: SSP.460
+    target: SOC_target
+  - dataset: SSP.460
+    target: pH_target
+  - dataset: SSP.460
+    target: Clay_target
+  - dataset: SSP.58
+    target: SOC_target
+  - dataset: SSP.58
+    target: pH_target
+  - dataset: SSP.58
+    target: Clay_target
+  - dataset: UL.120
+    target: SOM_target
+  - dataset: UL.120
+    target: pH_target
+  - dataset: UL.120
+    target: Clay_target
+  - dataset: RP.62
+    target: SOC_target
+  - dataset: RP.62
+    target: pH_target
+  - dataset: RP.62
+    target: Clay_target
+  - dataset: SA.112
+    target: SOC_target
+  - dataset: SA.112
+    target: pH_target
+  - dataset: SA.112
     target: Clay_target
 
 optimization:
