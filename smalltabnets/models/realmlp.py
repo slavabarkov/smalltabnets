@@ -1,3 +1,4 @@
+import logging
 from typing import Optional
 
 import numpy as np
@@ -11,94 +12,79 @@ class RealMLPRegressor(BaseTabularRegressor):
 
     def __init__(
         self,
-        # Base parameters
-        epochs=256,
-        learning_rate=0.2,
-        batch_size=256,
-        use_early_stopping=False,
-        early_stopping_rounds=None,
-        # Dimensionality reduction
+        # Base training parameters
+        epochs: int = 256,
+        learning_rate: float = 1e-3,
+        batch_size: int = 16,
+        # Base early stopping parameters
+        use_early_stopping: bool = True,
+        early_stopping_rounds: Optional[int] = 16,
+        # Base preprocessing parameters
+        feature_scaling: bool = "robust",
+        standardize_targets: bool = True,
+        clip_features: bool = False,
+        clip_outputs: bool = False,
+        # Base dimensionality reduction parameters
         use_pca: bool = False,
         n_pca_components: Optional[int] = None,
-        # Only store params we need to reference
+        # Base system and utility parameters
+        device: Optional[str] = "cuda",
+        random_state: int = 42,
+        verbose: int = 0,
+        # RealMLP specific parameters
+        # Only store params we reference
         n_hidden_layers=3,
         hidden_width=256,
-        # Misc
-        device=None,
-        random_state=42,
-        verbose=0,
-        **kwargs
+        wd=1e-2,
+        p_drop=0.0,
     ):
-
-        # Only store parameters we need to reference later
+        # Store RealMLP-specific hyper-parameters
         self.n_hidden_layers = n_hidden_layers
         self.hidden_width = hidden_width
+        self.val_fraction = 0  # always 0, we separate validation set manually
+        self.hidden_sizes = [hidden_width] * n_hidden_layers
+        self.wd = wd
+        self.p_drop = p_drop
 
-        # All other RealMLP parameters will be passed through kwargs
         super().__init__(
+            # Base training parameters
             epochs=epochs,
             learning_rate=learning_rate,
             batch_size=batch_size,
+            # Base early stopping parameters
             use_early_stopping=use_early_stopping,
             early_stopping_rounds=early_stopping_rounds,
+            # Base preprocessing parameters
+            feature_scaling=feature_scaling,
+            standardize_targets=standardize_targets,
+            clip_features=clip_features,
+            clip_outputs=clip_outputs,
+            # Base dimensionality reduction parameters
+            use_pca=use_pca,
+            n_pca_components=n_pca_components,
+            # Base system and utility parameters
             device=device,
             random_state=random_state,
             verbose=verbose,
-            use_pca=use_pca,
-            n_pca_components=n_pca_components,
-            **kwargs
         )
 
-    def _get_expected_params(self):
-        # All parameters that RealMLP accepts
-        return [
-            "n_epochs",
-            "lr",
-            "early_stopping_additive_patience",
-            "early_stopping_multiplicative_patience",
-            "batch_size",
-            "lr_sched",
-            "opt",
-            "p_drop",
-            "p_drop_sched",
-            "wd",
-            "wd_sched",
-            "device",
-            "random_state",
-            "verbosity",
-            "use_early_stopping",
-            "n_hidden_layers",
-            "hidden_width",
-            "hidden_sizes",
-            "val_fraction",
-            "share_training_batches",
-            "beta1",
-            "beta2",
-            "momentum",
-            "weight_decay",
-            "l1_reg",
-            "l2_reg",
-            "gradient_clipping_norm",
-            "swa",
-            "swa_start_epoch",
-            "swa_lr",
-        ]
-
     def _create_model(self, n_features):
-        # Get all parameters (from kwargs, mappings, and attributes)
-        params = self._get_model_params()
-
-        # Override only the parameters we need to control
-        params["val_fraction"] = 0  # Always 0 as required
-
-        # Add hidden_sizes if not already present
-        if "hidden_sizes" not in params and self.n_hidden_layers and self.hidden_width:
-            params["hidden_sizes"] = [self.hidden_width] * self.n_hidden_layers
-
-        return RealMLP_TD_Regressor(**params)
+        return RealMLP_TD_Regressor(
+            n_epochs=self.epochs,
+            lr=self.learning_rate,
+            batch_size=self.batch_size,
+            device=self.device,
+            random_state=self.random_state,
+            verbosity=self.verbose,
+            n_hidden_layers=self.n_hidden_layers,
+            hidden_width=self.hidden_width,
+            hidden_sizes=self.hidden_sizes,
+            wd=self.wd,
+            p_drop=self.p_drop,
+            val_fraction=self.val_fraction,
+        )
 
     def _fit_model(self, X, y, eval_set=None):
-        import logging
 
         logging.getLogger("pytorch_lightning").setLevel(logging.ERROR)
 

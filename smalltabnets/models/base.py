@@ -26,90 +26,44 @@ class BaseTabularRegressor(BaseEstimator, RegressorMixin, ABC):
     - _predict_model(): Model-specific prediction logic
     """
 
-    # Unified parameter mapping
-    PARAM_MAPPING = {
-        "epochs": [
-            "epochs",
-            "n_epochs",
-            "n_estimators",
-        ],
-        "learning_rate": [
-            "learning_rate",
-            "lr",
-        ],
-        "early_stopping_rounds": [
-            "early_stopping_rounds",
-            "early_stopping_patience",
-            "early_stopping_additive_patience",
-        ],
-        "use_early_stopping": [
-            "use_early_stopping",
-        ],
-        "random_state": [
-            "random_state",
-            "seed",
-        ],
-        "verbose": [
-            "verbose",
-            "verbosity",
-        ],
-    }
-
-    def __init__(
-        self,
-        # Common parameters with unified names
-        epochs: int = 1000,
-        learning_rate: float = 1e-3,
-        batch_size: Optional[int] = 16,
-        use_early_stopping: bool = True,
-        early_stopping_rounds: Optional[int] = 40,
-        # Misc
-        device: Optional[str] = "cuda",
-        random_state: int = 42,
-        verbose: int = 0,
-        # Preprocessing
-        feature_scaling: Optional[str] = None,  # 'standard', 'robust', or None
-        standardize_targets: bool = False,
-        clip_features: bool = False,
-        clip_outputs: bool = False,
-        # Dimensionality reduction
-        use_pca: bool = False,
-        n_pca_components: Optional[int] = None,
-        **kwargs,
-    ):
+    def __init__(self, **kwargs):
         """
         Initialize base regressor with common parameters.
 
         Subclasses can accept additional parameters in kwargs.
         """
-        # Common parameters
-        self.epochs = epochs
-        self.learning_rate = learning_rate
-        self.batch_size = batch_size
-        self.use_early_stopping = use_early_stopping
-        self.early_stopping_rounds = early_stopping_rounds
+        # Training
+        self.epochs = kwargs.pop("epochs", 256)
+        self.learning_rate = kwargs.pop("learning_rate", 1e-3)
+        self.batch_size = kwargs.pop("batch_size", 16)
+
+        # Early stopping
+        self.use_early_stopping = kwargs.pop("use_early_stopping", True)
+        self.early_stopping_rounds = kwargs.pop("early_stopping_rounds", 16)
 
         # Preprocessing
-        self.feature_scaling = feature_scaling
-        self.standardize_targets = standardize_targets
-        self.clip_features = clip_features
-        self.clip_outputs = clip_outputs
+        # Feature scaling could be "standard", "robust", or None
+        self.feature_scaling = kwargs.pop("feature_scaling", None)
+        self.standardize_targets = kwargs.pop("standardize_targets", False)
+        self.clip_features = kwargs.pop("clip_features", False)
+        self.clip_outputs = kwargs.pop("clip_outputs", False)
 
         # Dimensionality reduction
-        self.use_pca = use_pca
-        self.n_pca_components = n_pca_components
-        self._pca = None
+        self.use_pca = kwargs.pop("use_pca", False)
+        self.n_pca_components = kwargs.pop("n_pca_components", 0.95)
 
-        # Misc
-        self.device = device
-        self.random_state = random_state
-        self.verbose = verbose
+        # System and utility
+        self.device = kwargs.pop("device", "cuda")
+        self.random_state = kwargs.pop("random_state", None)
+        self.verbose = kwargs.pop("verbose", 0)
 
-        # Store extra kwargs for subclasses
-        self._extra_params = kwargs
+        # Fail if unexpected kwargs remain
+        if kwargs:
+            raise ValueError(f"Unexpected parameters: {list(kwargs.keys())}")
 
         # Will be set during fit
         self.best_iteration = None
+        self._pca = None
         self._feature_scaler = None
         self._target_stats = None
         self._original_n_features = None
@@ -201,37 +155,6 @@ class BaseTabularRegressor(BaseEstimator, RegressorMixin, ABC):
         X_val = self._apply_feature_preprocessing(X_val, fit=False)
         y_val = self._apply_target_preprocessing(y_val, fit=False)
         return [(X_val, y_val)]
-
-    def _get_model_params(self):
-        """
-        Get parameters mapped to model-specific names.
-        Subclasses can override to add custom mappings.
-        """
-        params = {}
-        expected_params = self._get_expected_params()
-
-        # First, collect all parameters from _extra_params that are expected
-        for param_name in expected_params:
-            if param_name in self._extra_params:
-                params[param_name] = self._extra_params[param_name]
-
-        # Then apply parameter mapping for unified names
-        for unified_name, possible_names in self.PARAM_MAPPING.items():
-            if hasattr(self, unified_name):
-                value = getattr(self, unified_name)
-                # Find which name the model expects
-                for name in possible_names:
-                    if name in expected_params:
-                        params[name] = value
-                        break
-
-        # Also check if any expected params exist as attributes on self
-        # (for backwards compatibility and flexibility)
-        for param_name in expected_params:
-            if param_name not in params and hasattr(self, param_name):
-                params[param_name] = getattr(self, param_name)
-
-        return params
 
     # ========================================================================
     # Common PyTorch training logic
@@ -330,7 +253,6 @@ class BaseTabularRegressor(BaseEstimator, RegressorMixin, ABC):
         y_tensor = torch.as_tensor(y, dtype=torch.float32, device=self.device)
 
         # Set random seeds
-        # torch.manual_seed(self.random_state) #!!!
         rng = np.random.RandomState(self.random_state)
 
         # Create optimizer and criterion
@@ -401,11 +323,6 @@ class BaseTabularRegressor(BaseEstimator, RegressorMixin, ABC):
     # ========================================================================
     # Abstract methods
     # ========================================================================
-
-    @abstractmethod
-    def _get_expected_params(self):
-        """Return list of parameter names expected by the underlying model."""
-        pass
 
     @abstractmethod
     def _create_model(self, n_features):

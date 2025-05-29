@@ -3,9 +3,7 @@ random_state: 42
 results_dir: results/limesoda_tabpfn_optimize
 
 fixed_parameters:
-  epochs: 32
-  use_early_stopping: false
-  early_stopping_rounds: null
+  n_estimators: 32
   device: cuda
   random_state: 42
   use_pca: false

@@ -3,7 +3,7 @@ random_state: 42
 results_dir: results/limesoda_rf_optimize
 
 fixed_parameters:
-  epochs: 1000
+  n_estimators: 1000
   bootstrap: true
   criterion: squared_error
   random_state: 42

@@ -1,6 +1,5 @@
 from typing import Dict, List, Optional
 
-import numpy as np
 import torch
 import torch.nn as nn
 
@@ -11,19 +10,26 @@ from .base import BaseTabularRegressor
 class ExcelFormerRegressor(BaseTabularRegressor):
     def __init__(
         self,
-        # shared parameters (handled by the base-class)
+        # Base training parameters
         epochs: int = 256,
         learning_rate: float = 1e-3,
-        batch_size: int = 32,
+        batch_size: int = 16,
+        # Base early stopping parameters
         use_early_stopping: bool = True,
         early_stopping_rounds: Optional[int] = 16,
+        # Base preprocessing parameters
+        feature_scaling: bool = "robust",
+        standardize_targets: bool = True,
+        clip_features: bool = False,
+        clip_outputs: bool = False,
+        # Base dimensionality reduction parameters
+        use_pca: bool = False,
+        n_pca_components: Optional[int] = None,
+        # Base system and utility parameters
         device: Optional[str] = "cuda",
         random_state: int = 42,
         verbose: int = 0,
-        # Dimensionality reduction
-        use_pca: bool = False,
-        n_pca_components: Optional[int] = None,
-        # ExcelFormer architecture
+        # ExcelFormer specific parameters
         token_bias: bool = True,
         n_layers: int = 2,
         d_token: int = 32,
@@ -51,45 +57,26 @@ class ExcelFormerRegressor(BaseTabularRegressor):
         self.init_scale = init_scale
 
         super().__init__(
+            # Base training parameters
             epochs=epochs,
             learning_rate=learning_rate,
             batch_size=batch_size,
+            # Base early stopping parameters
             use_early_stopping=use_early_stopping,
             early_stopping_rounds=early_stopping_rounds,
+            # Base preprocessing parameters
+            feature_scaling=feature_scaling,
+            standardize_targets=standardize_targets,
+            clip_features=clip_features,
+            clip_outputs=clip_outputs,
+            # Base dimensionality reduction parameters
+            use_pca=use_pca,
+            n_pca_components=n_pca_components,
+            # Base system and utility parameters
             device=device,
             random_state=random_state,
             verbose=verbose,
-            use_pca=use_pca,
-            n_pca_components=n_pca_components,
-            **kwargs,
         )
-
-    def _get_expected_params(self) -> List[str]:
-        return [
-            "epochs",
-            "learning_rate",
-            "batch_size",
-            "use_early_stopping",
-            "early_stopping_rounds",
-            "token_bias",
-            "n_layers",
-            "d_token",
-            "n_heads",
-            "attention_dropout",
-            "ffn_dropout",
-            "residual_dropout",
-            "prenormalization",
-            "kv_compression",
-            "kv_compression_sharing",
-            "init_scale",
-            "device",
-            "random_state",
-            "verbose",
-            "feature_scaling",
-            "standardize_targets",
-            "clip_features",
-            "clip_outputs",
-        ]
 
     def _create_model(self, n_features: int) -> nn.Module:
         model = ExcelFormer(

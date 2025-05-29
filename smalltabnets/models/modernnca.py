@@ -12,16 +12,26 @@ from .base import BaseTabularRegressor
 class ModernNCARegressor(BaseTabularRegressor):
     def __init__(
         self,
-        # Base parameters
+        # Base training parameters
         epochs: int = 256,
         learning_rate: float = 1e-3,
-        batch_size: int = 32,
+        batch_size: int = 16,
+        # Base early stopping parameters
         use_early_stopping: bool = True,
         early_stopping_rounds: Optional[int] = 16,
-        # Dimensionality reduction
+        # Base preprocessing parameters
+        feature_scaling: bool = "robust",
+        standardize_targets: bool = True,
+        clip_features: bool = False,
+        clip_outputs: bool = False,
+        # Base dimensionality reduction parameters
         use_pca: bool = False,
         n_pca_components: Optional[int] = None,
-        # Modern-NCA architecture
+        # Base system and utility parameters
+        device: Optional[str] = "cuda",
+        random_state: int = 42,
+        verbose: int = 0,
+        # Modern-NCA specific parameters
         dim: int = 128,
         d_block: int = 256,
         n_blocks: int = 0,
@@ -32,11 +42,6 @@ class ModernNCARegressor(BaseTabularRegressor):
         use_embeddings: bool = False,
         embedding_type: str = "piecewise_linear",  # "piecewise_linear" or "linear"
         embedding_dim: int = 16,
-        # Misc
-        device: Optional[str] = None,
-        random_state: int = 42,
-        verbose: int = 0,
-        **kwargs,
     ):
 
         self.dim = dim
@@ -54,41 +59,26 @@ class ModernNCARegressor(BaseTabularRegressor):
         self.bins = None
 
         super().__init__(
+            # Base training parameters
             epochs=epochs,
             learning_rate=learning_rate,
             batch_size=batch_size,
+            # Base early stopping parameters
             use_early_stopping=use_early_stopping,
             early_stopping_rounds=early_stopping_rounds,
+            # Base preprocessing parameters
+            feature_scaling=feature_scaling,
+            standardize_targets=standardize_targets,
+            clip_features=clip_features,
+            clip_outputs=clip_outputs,
+            # Base dimensionality reduction parameters
+            use_pca=use_pca,
+            n_pca_components=n_pca_components,
+            # Base system and utility parameters
             device=device,
             random_state=random_state,
             verbose=verbose,
-            use_pca=use_pca,
-            n_pca_components=n_pca_components,
-            **kwargs,
         )
-
-    def _get_expected_params(self):
-        return [
-            # training
-            "epochs",
-            "learning_rate",
-            "batch_size",
-            "use_early_stopping",
-            "early_stopping_rounds",
-            # architecture
-            "dim",
-            "d_block",
-            "n_blocks",
-            "dropout",
-            "temperature",
-            "sample_rate",
-            "num_embeddings",
-            "d_num",
-            # misc
-            "device",
-            "random_state",
-            "verbose",
-        ]
 
     def _create_model(self, n_features: int):
         model = ModernNCA(

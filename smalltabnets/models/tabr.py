@@ -13,16 +13,26 @@ from .base import BaseTabularRegressor
 class TabRRegressor(BaseTabularRegressor):
     def __init__(
         self,
-        # Base (shared) parameters
+        # Base training parameters
         epochs: int = 256,
-        learning_rate: float = 2e-3,
-        batch_size: int = 32,
+        learning_rate: float = 1e-3,
+        batch_size: int = 16,
+        # Base early stopping parameters
         use_early_stopping: bool = True,
         early_stopping_rounds: Optional[int] = 16,
-        # Dimensionality reduction
+        # Base preprocessing parameters
+        feature_scaling: bool = "robust",
+        standardize_targets: bool = True,
+        clip_features: bool = False,
+        clip_outputs: bool = False,
+        # Base dimensionality reduction parameters
         use_pca: bool = False,
         n_pca_components: Optional[int] = None,
-        # TabR specific
+        # Base system and utility parameters
+        device: Optional[str] = "cuda",
+        random_state: int = 42,
+        verbose: int = 0,
+        # TabR specific parameters
         d_main: int = 64,
         d_multiplier: float = 2.0,
         encoder_n_blocks: int = 2,
@@ -40,11 +50,6 @@ class TabRRegressor(BaseTabularRegressor):
         use_embeddings: bool = True,
         embedding_type: str = "piecewise_linear",  # or "linear", "lr", "plr", etc.
         embedding_dim: int = 16,
-        # Misc
-        device: Optional[str] = "cuda",
-        random_state: int = 42,
-        verbose: int = 0,
-        **kwargs,
     ):
         # Store TabR specific parameters
         self.d_main = d_main
@@ -69,47 +74,26 @@ class TabRRegressor(BaseTabularRegressor):
         self.bins = None
 
         super().__init__(
+            # Base training parameters
             epochs=epochs,
             learning_rate=learning_rate,
             batch_size=batch_size,
+            # Base early stopping parameters
             use_early_stopping=use_early_stopping,
             early_stopping_rounds=early_stopping_rounds,
+            # Base preprocessing parameters
+            feature_scaling=feature_scaling,
+            standardize_targets=standardize_targets,
+            clip_features=clip_features,
+            clip_outputs=clip_outputs,
+            # Base dimensionality reduction parameters
+            use_pca=use_pca,
+            n_pca_components=n_pca_components,
+            # Base system and utility parameters
             device=device,
             random_state=random_state,
             verbose=verbose,
-            use_pca=use_pca,
-            n_pca_components=n_pca_components,
-            **kwargs,
         )
-
-    def _get_expected_params(self):
-        return [
-            "epochs",
-            "learning_rate",
-            "batch_size",
-            "use_early_stopping",
-            "early_stopping_rounds",
-            "d_main",
-            "d_multiplier",
-            "encoder_n_blocks",
-            "predictor_n_blocks",
-            "mixer_normalization",
-            "context_dropout",
-            "dropout0",
-            "dropout1",
-            "normalization",
-            "activation",
-            "context_size",
-            "memory_efficient",
-            "candidate_encoding_batch_size",
-            "device",
-            "random_state",
-            "verbose",
-            "feature_scaling",
-            "standardize_targets",
-            "clip_features",
-            "clip_outputs",
-        ]
 
     def _create_model(self, n_features: int):
         """

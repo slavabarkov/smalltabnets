@@ -15,13 +15,26 @@ class TabMRegressor(BaseTabularRegressor):
 
     def __init__(
         self,
-        # Base parameters
-        epochs=1000,
-        learning_rate=2e-3,
-        batch_size=16,
-        use_early_stopping=True,
-        early_stopping_rounds=16,
-        # Architecture parameters
+        # Base training parameters
+        epochs: int = 256,
+        learning_rate: float = 1e-3,
+        batch_size: int = 16,
+        # Base early stopping parameters
+        use_early_stopping: bool = True,
+        early_stopping_rounds: Optional[int] = 16,
+        # Base preprocessing parameters
+        feature_scaling: bool = "robust",
+        standardize_targets: bool = True,
+        clip_features: bool = False,
+        clip_outputs: bool = False,
+        # Base dimensionality reduction parameters
+        use_pca: bool = False,
+        n_pca_components: Optional[int] = None,
+        # Base system and utility parameters
+        device: Optional[str] = "cuda",
+        random_state: int = 42,
+        verbose: int = 0,
+        # TabM specific parameters
         arch_type: str = "tabm",
         k: int = 32,
         # Parameters for building the backbone
@@ -37,16 +50,8 @@ class TabMRegressor(BaseTabularRegressor):
         gradient_clipping_norm: Optional[float] = 1.0,
         # Embeddings
         use_embeddings: bool = True,
-        embedding_type: str = "piecewise_linear",  # or "linear", "lr", "plr", etc.
+        embedding_type: str = "piecewise_linear",  # "piecewise_linear" or "linear"
         embedding_dim: int = 16,
-        # Dimensionality reduction
-        use_pca: bool = False,
-        n_pca_components: Optional[int] = None,
-        # Misc
-        device=None,
-        random_state=42,
-        verbose=0,
-        **kwargs,
     ):
         self.arch_type = arch_type
         self.k = k
@@ -70,49 +75,26 @@ class TabMRegressor(BaseTabularRegressor):
         self.bins = None
 
         super().__init__(
+            # Base training parameters
             epochs=epochs,
             learning_rate=learning_rate,
             batch_size=batch_size,
+            # Base early stopping parameters
             use_early_stopping=use_early_stopping,
             early_stopping_rounds=early_stopping_rounds,
+            # Base preprocessing parameters
+            feature_scaling=feature_scaling,
+            standardize_targets=standardize_targets,
+            clip_features=clip_features,
+            clip_outputs=clip_outputs,
+            # Base dimensionality reduction parameters
+            use_pca=use_pca,
+            n_pca_components=n_pca_components,
+            # Base system and utility parameters
             device=device,
             random_state=random_state,
             verbose=verbose,
-            use_pca=use_pca,
-            n_pca_components=n_pca_components,
-            **kwargs,
         )
-
-    def _get_expected_params(self):
-        return [
-            "epochs",
-            "learning_rate",
-            "batch_size",
-            "use_early_stopping",
-            "early_stopping_rounds",
-            "k",
-            "arch_type",
-            "n_blocks",
-            "d_block",
-            "dropout",
-            "activation",
-            "weight_decay",
-            "beta1",
-            "beta2",
-            "gradient_clipping_norm",
-            "feature_scaling",
-            "standardize_targets",
-            "clip_features",
-            "clip_outputs",
-            "device",
-            "random_state",
-            "verbose",
-            "use_embeddings",
-            "embedding_type",
-            "embedding_dim",
-            "use_pca",
-            "n_pca_components",
-        ]
 
     def _prepare_embeddings(self, X):
         """

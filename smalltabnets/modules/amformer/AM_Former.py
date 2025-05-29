@@ -120,7 +120,7 @@ class NumericalEmbedder(nn.Module):
 # main class
 
 
-class FTTransformer(nn.Module):
+class AMFormer(nn.Module):
     def __init__(
         self,
         args,
