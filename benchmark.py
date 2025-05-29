@@ -52,7 +52,7 @@ def load_cfg(path):
 def load_limesoda_data(dataset_name, target):
     data = LimeSoDa.load_dataset(dataset_name)["Dataset"]
     all_target_cols = [c for c in data.columns if c.endswith("_target")]
-    
+
     X = data.drop(columns=all_target_cols).fillna(0)
     y = data[target]
 
@@ -173,9 +173,15 @@ def run(cfg):
             study = None
             best_params = cfg["fixed_parameters"].copy()
             if n_trials > 0:
-                sampler = optuna.samplers.TPESampler(
-                    seed=random_state, **cfg["optimization"]["sampler_params"]
-                )
+                sampler_type = cfg["optimization"].get("sampler", "tpe").lower()
+                if sampler_type == "bruteforce":
+                    sampler = optuna.samplers.BruteForceSampler(
+                        seed=random_state,
+                    )
+                else:  # default to TPE
+                    sampler = optuna.samplers.TPESampler(
+                        seed=random_state, **cfg["optimization"]["sampler_params"]
+                    )
                 study = optuna.create_study(direction="minimize", sampler=sampler)
 
                 study.optimize(
