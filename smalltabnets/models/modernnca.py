@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Any, Dict, Optional
 
 import numpy as np
 import rtdl_num_embeddings
@@ -70,7 +70,16 @@ class ModernNCARegressor(BaseTabularRegressor):
             return
 
         if self.embedding_type == "piecewise_linear":
-            self.bins = rtdl_num_embeddings.compute_bins(torch.as_tensor(X))
+            # In the original TabM implementation n_bins is fixed to 48
+            # However it should always be less than len(X) - 1, which is a problem for our small datasets
+            # We also want to avoid too many bins, so we use a simple heuristic
+            # We set a maximum of 48 bins, and a minimum of len(X) // 2 bins.
+            n_bins = min(48, len(X) // 2)
+            # Compute bins using quantiles
+            self.bins = rtdl_num_embeddings.compute_bins(
+                torch.as_tensor(X),
+                n_bins=n_bins,
+            )
             self.num_embeddings = {
                 "type": "PiecewiseLinearEmbeddings",
                 "d_embedding": self.embedding_dim,
@@ -84,6 +93,29 @@ class ModernNCARegressor(BaseTabularRegressor):
             }
         else:
             raise ValueError(f"Unknown embedding type: {self.embedding_type}")
+
+    def _prepare_batch(
+        self, X_tensor: torch.Tensor, y_tensor: torch.Tensor, indices: np.ndarray
+    ) -> Dict[str, Any]:
+        """
+        Prepare a batch for training.
+        Subclasses can override to add special handling.
+
+        Returns dict with at least 'inputs' and 'targets' keys.
+        Additional keys can be added for models with special requirements.
+        """
+        # Additional check for ModernNCA
+        # the batch should contain at least 2 samples
+        # so we return an empty batch if indices are too small
+        # and let the training loop handle it
+        if len(indices) <= 1:
+            empty_shape = (0, *X_tensor.shape[1:])
+            return {
+                "inputs": torch.empty(empty_shape, device=self.device),
+                "targets": torch.empty(empty_shape, device=self.device),
+            }
+
+        return {"inputs": X_tensor[indices], "targets": y_tensor[indices]}
 
     def fit(self, X, y, eval_set=None, verbose=False):
         """Common fit interface overriding with embeddings init logic."""

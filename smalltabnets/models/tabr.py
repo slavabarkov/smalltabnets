@@ -126,7 +126,16 @@ class TabRRegressor(BaseTabularRegressor):
             return
 
         if self.embedding_type == "piecewise_linear":
-            self.bins = rtdl_num_embeddings.compute_bins(torch.as_tensor(X))
+            # In the original TabM implementation n_bins is fixed to 48
+            # However it should always be less than len(X) - 1, which is a problem for our small datasets
+            # We also want to avoid too many bins, so we use a simple heuristic
+            # We set a maximum of 48 bins, and a minimum of len(X) // 2 bins.
+            n_bins = min(48, len(X) // 2)
+            # Compute bins using quantiles
+            self.bins = rtdl_num_embeddings.compute_bins(
+                torch.as_tensor(X),
+                n_bins=n_bins,
+            )
             self.num_embeddings = {
                 "type": "PiecewiseLinearEmbeddings",
                 "d_embedding": self.embedding_dim,

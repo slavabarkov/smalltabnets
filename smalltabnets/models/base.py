@@ -295,6 +295,10 @@ class BaseTabularRegressor(BaseEstimator, RegressorMixin, ABC):
                 # Prepare batch
                 batch = self._prepare_batch(X_tensor, y_tensor, indices)
 
+                # Edge case with empty batch
+                if batch["inputs"].shape[0] == 0:
+                    continue
+
                 # Forward pass
                 predictions = self._forward_pass(batch)
 
