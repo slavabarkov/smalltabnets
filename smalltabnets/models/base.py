@@ -19,6 +19,7 @@ class BaseTabularRegressor(BaseEstimator, RegressorMixin, ABC):
     - Early stopping bookkeeping
     - Common fit/predict patterns
     - Common PyTorch training loop for models that use it
+    - FP16/Mixed Precision training support
 
     Subclasses should implement:
     - _create_model(): Create the underlying model
@@ -33,9 +34,12 @@ class BaseTabularRegressor(BaseEstimator, RegressorMixin, ABC):
         epochs: int = 256,
         learning_rate: float = 1e-3,
         batch_size: Optional[int] = 16,
+        gradient_clipping_norm: Optional[float] = None,
         # Base early stopping parameters
         use_early_stopping: bool = True,
         early_stopping_rounds: Optional[int] = 16,
+        # FP16/Mixed Precision parameters
+        use_fp16: bool = False,
         # Base preprocessing parameters
         feature_scaling: Optional[Literal["standard", "robust"]] = None,
         standardize_targets: bool = False,
@@ -54,8 +58,10 @@ class BaseTabularRegressor(BaseEstimator, RegressorMixin, ABC):
         self.epochs = epochs
         self.learning_rate = learning_rate
         self.batch_size = batch_size
+        self.gradient_clipping_norm = gradient_clipping_norm
         self.use_early_stopping = use_early_stopping
         self.early_stopping_rounds = early_stopping_rounds
+
         self.feature_scaling = feature_scaling
         self.standardize_targets = standardize_targets
         self.clip_features = clip_features
@@ -76,6 +82,13 @@ class BaseTabularRegressor(BaseEstimator, RegressorMixin, ABC):
         self._feature_scaler = None
         self._target_stats = None
         self._original_n_features = None
+
+        # FP16/AMP components
+        self._autocast_enabled = False
+        self._scaler = None
+        if use_fp16 and device.startswith("cuda"):
+            self._autocast_enabled = True
+            self._scaler = torch.amp.GradScaler()
 
     def _apply_feature_preprocessing(self, X, fit=False):
         """Apply feature preprocessing (scaling, clipping, PCA)."""
@@ -112,7 +125,8 @@ class BaseTabularRegressor(BaseEstimator, RegressorMixin, ABC):
                     n_components = X.shape[1]
 
                 self._pca = PCA(
-                    n_components=n_components, random_state=self.random_state
+                    n_components=n_components,
+                    random_state=self.random_state,
                 )
                 X = self._pca.fit_transform(X)
 
@@ -166,7 +180,7 @@ class BaseTabularRegressor(BaseEstimator, RegressorMixin, ABC):
         return [(X_val, y_val)]
 
     # ========================================================================
-    # Common PyTorch training logic
+    # Common PyTorch training logic with FP16 support
     # ========================================================================
 
     def _get_optimizer(self, parameters) -> torch.optim.Optimizer:
@@ -174,7 +188,7 @@ class BaseTabularRegressor(BaseEstimator, RegressorMixin, ABC):
         Create optimizer for training.
         Subclasses can override to use different optimizers.
         """
-        return torch.optim.Adam(parameters, lr=self.learning_rate)
+        return torch.optim.AdamW(parameters, lr=self.learning_rate)
 
     def _get_criterion(self):
         """
@@ -208,22 +222,45 @@ class BaseTabularRegressor(BaseEstimator, RegressorMixin, ABC):
         self, predictions: torch.Tensor, batch: Dict[str, Any], criterion
     ) -> torch.Tensor:
         """
-        Compute loss.
+        Compute loss with optional autocast for FP16.
         Subclasses can override for special loss calculations.
         """
         targets = batch["targets"]
         if predictions.ndim == 2 and targets.ndim == 1:
             targets = targets.unsqueeze(-1)
+        elif predictions.ndim == 0 and targets.ndim == 1:
+            # Scalar prediction vs 1D target (happens with batch size 1)
+            predictions = predictions.unsqueeze(0)
+        elif predictions.ndim == 1 and targets.ndim == 0:
+            # 1D prediction vs scalar target
+            targets = targets.unsqueeze(0)
+
         return criterion(predictions, targets)
 
     def _optimizer_step(self, optimizer: torch.optim.Optimizer, loss: torch.Tensor):
         """
-        Perform optimizer step.
+        Perform optimizer step with optional gradient scaling for FP16.
         Subclasses can override to add gradient clipping, etc.
         """
-        optimizer.zero_grad(set_to_none=True)
-        loss.backward()
-        optimizer.step()
+        if self._scaler is not None:
+            # AMP training
+            optimizer.zero_grad(set_to_none=True)
+            self._scaler.scale(loss).backward()
+            if self.gradient_clipping_norm:
+                torch.nn.utils.clip_grad_norm_(
+                    self.model.parameters(), self.gradient_clipping_norm
+                )
+            self._scaler.step(optimizer)
+            self._scaler.update()
+        else:
+            # Standard training
+            optimizer.zero_grad(set_to_none=True)
+            loss.backward()
+            if self.gradient_clipping_norm:
+                torch.nn.utils.clip_grad_norm_(
+                    self.model.parameters(), self.gradient_clipping_norm
+                )
+            optimizer.step()
 
     @torch.inference_mode()
     def _evaluate_pytorch_model(
@@ -232,6 +269,7 @@ class BaseTabularRegressor(BaseEstimator, RegressorMixin, ABC):
         """
         Evaluate model on validation set.
         Returns validation RMSE by default.
+        Uses FP32 for evaluation to ensure stability.
         """
         self.model.eval()
         val_preds = self._predict_tensor(X_val)
@@ -241,6 +279,7 @@ class BaseTabularRegressor(BaseEstimator, RegressorMixin, ABC):
     def _predict_tensor(self, X_tensor: torch.Tensor) -> np.ndarray:
         """
         Make predictions on a tensor.
+        Always uses FP32 for inference to ensure numerical stability.
         Subclasses should override if they have special prediction logic.
         """
         self.model.eval()
@@ -254,12 +293,14 @@ class BaseTabularRegressor(BaseEstimator, RegressorMixin, ABC):
 
     def _fit_pytorch_model(self, X, y, eval_set=None):
         """
-        Common PyTorch training loop.
-        Subclasses can use this directly or override _fit_model with custom logic.
+        Common PyTorch training loop with FP16 support.
+        Autocast is applied at the training loop level to avoid needing
+        to modify individual model forward passes.
         """
         # Convert to tensors
-        X_tensor = torch.as_tensor(X, dtype=torch.float32, device=self.device)
-        y_tensor = torch.as_tensor(y, dtype=torch.float32, device=self.device)
+        dtype = torch.float32  # Always use FP32 for data, autocast handles conversion
+        X_tensor = torch.as_tensor(X, dtype=dtype, device=self.device)
+        y_tensor = torch.as_tensor(y, dtype=dtype, device=self.device)
 
         # Set random seeds
         rng = np.random.RandomState(self.random_state)
@@ -272,8 +313,8 @@ class BaseTabularRegressor(BaseEstimator, RegressorMixin, ABC):
         X_val = y_val = None
         if self.use_early_stopping and eval_set and len(eval_set) > 0:
             X_val_np, y_val_np = eval_set[0]
-            X_val = torch.as_tensor(X_val_np, dtype=torch.float32, device=self.device)
-            y_val = torch.as_tensor(y_val_np, dtype=torch.float32, device=self.device)
+            X_val = torch.as_tensor(X_val_np, dtype=dtype, device=self.device)
+            y_val = torch.as_tensor(y_val_np, dtype=dtype, device=self.device)
 
         # Early stopping variables
         best_metric = float("inf")
@@ -299,14 +340,16 @@ class BaseTabularRegressor(BaseEstimator, RegressorMixin, ABC):
                 if batch["inputs"].shape[0] == 0:
                     continue
 
-                # Forward pass
-                predictions = self._forward_pass(batch)
+                # Forward and loss computation with autocast if FP16 enabled
+                with torch.amp.autocast(
+                    device_type=self.device,
+                    enabled=self._autocast_enabled,
+                ):
+                    predictions = self._forward_pass(batch)
+                    loss = self._compute_loss(predictions, batch, criterion)
 
-                # Compute loss
-                loss = self._compute_loss(predictions, batch, criterion)
-
-                # Optimizer step
-                self._optimizer_step(optimizer, loss)
+                    # Optimizer step (with gradient scaling if FP16)
+                    self._optimizer_step(optimizer, loss)
 
             # Validation and early stopping
             if X_val is not None:
