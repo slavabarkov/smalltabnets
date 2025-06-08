@@ -29,7 +29,6 @@ class TabMRegressor(BaseTabularRegressor):
         beta1=0.9,
         beta2=0.999,
         share_training_batches: bool = True,
-        gradient_clipping_norm: Optional[float] = 1.0,
         # Embeddings
         use_embeddings: bool = True,
         embedding_type: str = "piecewise_linear",  # "piecewise_linear" or "linear"
@@ -48,7 +47,6 @@ class TabMRegressor(BaseTabularRegressor):
         self.weight_decay = weight_decay
         self.beta1 = beta1
         self.beta2 = beta2
-        self.gradient_clipping_norm = gradient_clipping_norm
         self.share_training_batches = share_training_batches
 
         # Embeddings
@@ -124,18 +122,6 @@ class TabMRegressor(BaseTabularRegressor):
             weight_decay=self.weight_decay,
             betas=(self.beta1, self.beta2),
         )
-
-    def _optimizer_step(self, optimizer, loss):
-        """Add gradient clipping."""
-        optimizer.zero_grad(set_to_none=True)
-        loss.backward()
-
-        if self.gradient_clipping_norm:
-            nn.utils.clip_grad_norm_(
-                self.model.parameters(), self.gradient_clipping_norm
-            )
-
-        optimizer.step()
 
     def _compute_loss(self, predictions, batch, criterion):
         """Special loss for ensemble."""
