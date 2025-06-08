@@ -19,7 +19,7 @@ class ModernNCARegressor(BaseTabularRegressor):
         n_blocks: int = 0,
         dropout: float = 0.0,
         temperature: float = 1.0,
-        sample_rate: float = 0.8,
+        sample_rate: float = 0.3,
         # Embeddings
         use_embeddings: bool = False,
         embedding_type: str = "piecewise_linear",  # "piecewise_linear" or "linear"
