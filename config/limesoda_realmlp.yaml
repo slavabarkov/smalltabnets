@@ -3,15 +3,19 @@ random_state: 42
 results_dir: results/limesoda_realmlp_optimize
 
 fixed_parameters:
-  epochs: 256
-  use_early_stopping: false
-  early_stopping_rounds: 256
+  use_fp16: false
+  epochs: 1000
+  use_early_stopping: true
+  early_stopping_rounds: 40
   device: cuda:0
   random_state: 42
   use_pca: false
   n_pca_components: null
-  feature_scaling: robust # we use realmlp scaler
-  standardize_targets: true # we use realmlp standrdizer
+  feature_scaling: robust
+  standardize_targets: true
+  use_embeddings: false
+  embedding_type: null
+  embedding_dim: null
 
 hyperparameter_grid:
   learning_rate:
@@ -52,6 +56,18 @@ datasets:
     target: pH_target
   - dataset: BB.250
     target: Clay_target
+  - dataset: BB.30_1
+    target: SOC_target
+  - dataset: BB.30_1
+    target: pH_target
+  - dataset: BB.30_1
+    target: Clay_target
+  - dataset: BB.30_2
+    target: SOC_target
+  - dataset: BB.30_2
+    target: pH_target
+  - dataset: BB.30_2
+    target: Clay_target
   - dataset: BB.51
     target: SOC_target
   - dataset: BB.51
@@ -88,11 +104,41 @@ datasets:
     target: pH_target
   - dataset: MGS.101
     target: Clay_target
+  - dataset: MWP.36
+    target: SOC_target
+  - dataset: MWP.36
+    target: pH_target
+  - dataset: MWP.36
+    target: Clay_target
   - dataset: NSW.52
     target: SOC_target
   - dataset: NSW.52
     target: pH_target
   - dataset: NSW.52
+    target: Clay_target
+  - dataset: PC.45
+    target: SOC_target
+  - dataset: PC.45
+    target: pH_target
+  - dataset: PC.45
+    target: Clay_target
+  - dataset: SC.50
+    target: SOC_target
+  - dataset: SC.50
+    target: pH_target
+  - dataset: SC.50
+    target: Clay_target
+  - dataset: SM.40
+    target: SOC_target
+  - dataset: SM.40
+    target: pH_target
+  - dataset: SM.40
+    target: Clay_target
+  - dataset: W.50
+    target: SOC_target
+  - dataset: W.50
+    target: pH_target
+  - dataset: W.50
     target: Clay_target
 
 optimization:

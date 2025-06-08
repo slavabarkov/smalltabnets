@@ -1,15 +1,47 @@
-model: tabpfn.TabPFNRegressor
+model: realmlp.RealMLPRegressor
 random_state: 42
-results_dir: results/limesoda_tabpfn_optimize
+results_dir: results/limesoda_ple_realmlp_optimize
 
 fixed_parameters:
-  n_estimators: 32
-  device: cuda
+  use_fp16: false
+  epochs: 1000
+  use_early_stopping: true
+  early_stopping_rounds: 40
+  device: cuda:0
   random_state: 42
   use_pca: false
   n_pca_components: null
-  feature_scaling: null
-  standardize_targets: null
+  feature_scaling: robust
+  standardize_targets: true
+  use_embeddings: true
+  embedding_type: piecewise_linear
+  embedding_dim: 16
+
+hyperparameter_grid:
+  learning_rate:
+    type: float
+    low: 0.0001
+    high: 0.01
+    log: true
+  wd:
+    type: float
+    low: 0.000001
+    high: 0.01
+    log: true
+  n_hidden_layers:
+    type: int
+    low: 2
+    high: 4
+  hidden_width:
+    type: categorical
+    choices: [64, 128, 256, 512]
+  p_drop:
+    type: float
+    low: 0.0
+    high: 0.3
+  batch_size:
+    type: categorical
+    choices: [4, 8, 16, 32]
 
 datasets:
   - dataset: B.204
@@ -110,7 +142,7 @@ datasets:
     target: Clay_target
 
 optimization:
-  n_trials: 0
+  n_trials: 100
   sampler: TPE
   sampler_params:
     n_startup_trials: 20
@@ -120,18 +152,20 @@ optimization:
     inner_folds: 5
 
 outer_train_strategies:
-  agg_epochs_mean: 
-    enabled: false
-  agg_epochs_mean_std: 
-    enabled: false
-  agg_epochs_percentile: 
-    enabled: false
-  best_inner_model: 
+  agg_epochs_mean:
     enabled: true
-  full_train: 
+  agg_epochs_mean_std:
     enabled: true
-    epochs: 32
-  early_stopping: 
-    enabled: false
-  ensemble: 
+  agg_epochs_percentile:
+    enabled: true
+    percentile: 90
+  best_inner_model:
+    enabled: true
+  full_train:
+    enabled: true
+    epochs: 256
+  early_stopping:
+    enabled: true
+    val_frac: 0.2
+  ensemble:
     enabled: true
