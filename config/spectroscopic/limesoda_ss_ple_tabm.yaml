@@ -1,6 +1,6 @@
 model: tabm.TabMRegressor
 random_state: 42
-results_dir: results/limesoda_ss_tabm_optimize
+results_dir: results/limesoda_ss_tabm_ple_optimize
 
 fixed_parameters:
   use_fp16: false
@@ -15,7 +15,7 @@ fixed_parameters:
   # Model specific parameters
   arch_type: tabm
   k: 32
-  use_embeddings: false
+  use_embeddings: true
   embedding_type: piecewise_linear
   embedding_dim: 16
 

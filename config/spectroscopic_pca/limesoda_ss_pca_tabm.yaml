@@ -3,9 +3,10 @@ random_state: 42
 results_dir: results/limesoda_ss_pca_tabm_optimize
 
 fixed_parameters:
+  use_fp16: false
   epochs: 1000
   use_early_stopping: true
-  early_stopping_rounds: 16
+  early_stopping_rounds: 40
   device: cuda
   random_state: 42
   use_pca: true

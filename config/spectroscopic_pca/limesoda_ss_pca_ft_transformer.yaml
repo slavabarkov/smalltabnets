@@ -1,6 +1,6 @@
-model: tabm.TabMRegressor
+model: ft_transformer.FTTransformerRegressor
 random_state: 42
-results_dir: results/limesoda_ss_tabm_optimize
+results_dir: results/limesoda_ss_pca_fttransformer_optimize
 
 fixed_parameters:
   use_fp16: false
@@ -9,35 +9,44 @@ fixed_parameters:
   early_stopping_rounds: 40
   device: cuda
   random_state: 42
-  use_pca: false
-  standardize_targets: true
+  use_pca: true
+  n_pca_components: null
   feature_scaling: robust
-  # Model specific parameters
-  arch_type: tabm
-  k: 32
-  use_embeddings: false
-  embedding_type: piecewise_linear
-  embedding_dim: 16
+  standardize_targets: true
 
 hyperparameter_grid:
-  learning_rate:
-    type: float
-    low: 0.0001
-    high: 0.005
-    log: true
-  weight_decay:
-    type: float
-    low: 0.000001
-    high: 0.01
-    log: true
-  n_blocks:
+  n_pca_components:
     type: int
     low: 2
+    high: 32
+  learning_rate:
+    type: float
+    log: true
+    low: 0.0001
+    high: 0.01
+  n_layers:
+    type: int
+    low: 1
     high: 4
-  d_block:
+  d_token:
     type: categorical
-    choices: [64, 128, 256, 512]
-  dropout:
+    choices: [16, 32, 48, 64]
+  n_heads:
+    type: categorical
+    choices: [2, 4]
+  d_ffn_factor:
+    type: float
+    low: 1.0
+    high: 4.0
+  attention_dropout:
+    type: float
+    low: 0.0
+    high: 0.3
+  ffn_dropout:
+    type: float
+    low: 0.0
+    high: 0.3
+  residual_dropout:
     type: float
     low: 0.0
     high: 0.3
@@ -159,7 +168,7 @@ outer_train_strategies:
     enabled: true
   full_train:
     enabled: true
-    epochs: 128
+    epochs: 256
   early_stopping:
     enabled: true
     val_frac: 0.2

@@ -1,49 +1,52 @@
-model: tabm.TabMRegressor
+model: xgboost.XGBRegressor
 random_state: 42
-results_dir: results/limesoda_ss_tabm_optimize
+results_dir: results/limesoda_ss_xgboost_optimize
 
 fixed_parameters:
-  use_fp16: false
-  epochs: 1000
+  n_estimators: 1000
   use_early_stopping: true
   early_stopping_rounds: 40
-  device: cuda
-  random_state: 42
   use_pca: false
-  standardize_targets: true
-  feature_scaling: robust
-  # Model specific parameters
-  arch_type: tabm
-  k: 32
-  use_embeddings: false
-  embedding_type: piecewise_linear
-  embedding_dim: 16
+  n_pca_components: null
+  random_state: 42
+  n_jobs: -1
 
 hyperparameter_grid:
   learning_rate:
     type: float
-    low: 0.0001
-    high: 0.005
     log: true
-  weight_decay:
-    type: float
-    low: 0.000001
-    high: 0.01
-    log: true
-  n_blocks:
-    type: int
-    low: 2
-    high: 4
-  d_block:
-    type: categorical
-    choices: [64, 128, 256, 512]
-  dropout:
-    type: float
-    low: 0.0
+    low: 0.001
     high: 0.3
-  batch_size:
-    type: categorical
-    choices: [4, 8, 16, 32]
+  max_depth:
+    type: int
+    low: 3
+    high: 10
+  min_child_weight:
+    type: int
+    low: 1
+    high: 10
+  subsample:
+    type: float
+    low: 0.5
+    high: 1.0
+  colsample_bytree:
+    type: float
+    low: 0.5
+    high: 1.0
+  gamma:
+    type: float
+    low: 0
+    high: 5
+  reg_alpha:
+    type: float
+    log: true
+    low: 0.000001
+    high: 10.0
+  reg_lambda:
+    type: float
+    log: true
+    low: 0.1
+    high: 10.0
 
 datasets:
   - dataset: CV.98
@@ -154,12 +157,11 @@ outer_train_strategies:
     enabled: true
   agg_epochs_percentile:
     enabled: true
-    percentile: 90
   best_inner_model:
     enabled: true
   full_train:
     enabled: true
-    epochs: 128
+    epochs: 1000
   early_stopping:
     enabled: true
     val_frac: 0.2

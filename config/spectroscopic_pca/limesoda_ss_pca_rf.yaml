@@ -1,49 +1,39 @@
-model: tabm.TabMRegressor
+model: rf.RandomForestRegressor
 random_state: 42
-results_dir: results/limesoda_ss_tabm_optimize
+results_dir: results/limesoda_ss_pca_rf_optimize
 
 fixed_parameters:
-  use_fp16: false
-  epochs: 1000
-  use_early_stopping: true
-  early_stopping_rounds: 40
-  device: cuda
+  n_estimators: 1000
+  bootstrap: true
+  criterion: squared_error
   random_state: 42
-  use_pca: false
-  standardize_targets: true
-  feature_scaling: robust
-  # Model specific parameters
-  arch_type: tabm
-  k: 32
-  use_embeddings: false
-  embedding_type: piecewise_linear
-  embedding_dim: 16
+  n_jobs: -1
+  use_pca: true
+  n_pca_components: null
+  feature_scaling: null
+  standardize_targets: false
 
 hyperparameter_grid:
-  learning_rate:
-    type: float
-    low: 0.0001
-    high: 0.005
-    log: true
-  weight_decay:
-    type: float
-    low: 0.000001
-    high: 0.01
-    log: true
-  n_blocks:
+  n_pca_components:
     type: int
     low: 2
-    high: 4
-  d_block:
-    type: categorical
-    choices: [64, 128, 256, 512]
-  dropout:
+    high: 32
+  max_depth:
+    type: int
+    low: 3
+    high: 30
+  min_samples_split:
+    type: int
+    low: 2
+    high: 10
+  min_samples_leaf:
+    type: int
+    low: 1
+    high: 10
+  max_features:
     type: float
-    low: 0.0
-    high: 0.3
-  batch_size:
-    type: categorical
-    choices: [4, 8, 16, 32]
+    low: 0.6
+    high: 1.0
 
 datasets:
   - dataset: CV.98
@@ -149,19 +139,17 @@ optimization:
 
 outer_train_strategies:
   agg_epochs_mean:
-    enabled: true
+    enabled: false
   agg_epochs_mean_std:
-    enabled: true
+    enabled: false
   agg_epochs_percentile:
-    enabled: true
-    percentile: 90
+    enabled: false
   best_inner_model:
     enabled: true
   full_train:
     enabled: true
-    epochs: 128
+    epochs: 1000
   early_stopping:
-    enabled: true
-    val_frac: 0.2
+    enabled: false
   ensemble:
     enabled: true
