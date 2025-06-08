@@ -16,7 +16,6 @@ class TabPFNRegressor(BaseTabularRegressor):
         n_estimators: int = 32,
         ignore_pretraining_limits: bool = True,
         feature_shift_method: str = "shuffle",
-        class_shift_method: Optional[str] = "shuffle",
         fingerprint_feature: bool = True,
         polynomial_features: str = "no",
         subsample_samples: Optional[int] = None,
@@ -26,14 +25,12 @@ class TabPFNRegressor(BaseTabularRegressor):
         self.n_estimators = n_estimators
         self.ignore_pretraining_limits = ignore_pretraining_limits
         self.feature_shift_method = feature_shift_method
-        self.class_shift_method = class_shift_method
         self.fingerprint_feature = fingerprint_feature
         self.polynomial_features = polynomial_features
         self.subsample_samples = subsample_samples
 
         self.inference_config = ModelInterfaceConfig(
             FEATURE_SHIFT_METHOD=self.feature_shift_method,
-            CLASS_SHIFT_METHOD=self.class_shift_method,
             FINGERPRINT_FEATURE=self.fingerprint_feature,
             POLYNOMIAL_FEATURES=self.polynomial_features,
             SUBSAMPLE_SAMPLES=self.subsample_samples,
