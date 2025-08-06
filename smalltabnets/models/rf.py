@@ -53,4 +53,4 @@ class RandomForestRegressor(BaseTabularRegressor):
     def _fit_model(self, X, y, eval_set=None):
         # Random Forest doesn't use validation set
         self.model.fit(X, y)
-        self.best_iteration = self.epochs  # Always uses all trees
+        self.best_iteration = self.epochs - 1  # Always uses all trees

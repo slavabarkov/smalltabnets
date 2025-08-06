@@ -19,6 +19,7 @@ class TabPFNRegressor(BaseTabularRegressor):
         fingerprint_feature: bool = True,
         polynomial_features: str = "no",
         subsample_samples: Optional[int] = None,
+        standardize_targets_tabpfn: bool = True,
         # Accept all base parameters via **kwargs
         **kwargs,
     ):
@@ -28,12 +29,17 @@ class TabPFNRegressor(BaseTabularRegressor):
         self.fingerprint_feature = fingerprint_feature
         self.polynomial_features = polynomial_features
         self.subsample_samples = subsample_samples
+        self.standardize_targets_tabpfn = standardize_targets_tabpfn
 
         self.inference_config = ModelInterfaceConfig(
             FEATURE_SHIFT_METHOD=self.feature_shift_method,
             FINGERPRINT_FEATURE=self.fingerprint_feature,
             POLYNOMIAL_FEATURES=self.polynomial_features,
             SUBSAMPLE_SAMPLES=self.subsample_samples,
+            REGRESSION_Y_PREPROCESS_TRANSFORMS=(
+                None,
+                "safepower" if self.standardize_targets_tabpfn else None,
+            ),
         )
 
         kwargs.setdefault("epochs", self.n_estimators)
@@ -53,4 +59,4 @@ class TabPFNRegressor(BaseTabularRegressor):
     def _fit_model(self, X, y, eval_set=None):
         # TabPFN doesn't use validation set
         self.model.fit(X, y)
-        self.best_iteration = self.epochs
+        self.best_iteration = self.epochs - 1
