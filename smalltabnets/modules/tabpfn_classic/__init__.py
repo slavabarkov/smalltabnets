@@ -1,1 +1,0 @@
-from .scripts.transformer_prediction_interface import TabPFNClassifier
