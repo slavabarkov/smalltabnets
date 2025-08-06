@@ -1,13 +1,14 @@
 import argparse
+import copy
 import json
 import logging
 import os
-import random
 import shutil
 import sys
 from datetime import datetime
 from importlib import import_module
-import copy
+from pathlib import Path
+
 import LimeSoDa
 import numpy as np
 import optuna
@@ -17,30 +18,31 @@ from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.model_selection import KFold, train_test_split
 
 
-def get_logger():
-    """Return a logger that writes to file and console."""
+def get_logger(
+    log_to_stdout: bool = True,
+    log_to_file: bool = False,
+) -> logging.Logger:
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     os.makedirs("logs", exist_ok=True)
 
-    log_fmt = "[%(asctime)s] %(levelname)s: %(message)s"
-    handlers = [
-        logging.FileHandler(f"logs/run_{ts}.log", mode="w"),
-        logging.StreamHandler(sys.stdout),
-    ]
+    handlers = []
+    if log_to_stdout:
+        handlers.append(logging.StreamHandler(sys.stdout))
+    if log_to_file:
+        handlers.append(logging.FileHandler(f"logs/run_{ts}.log", mode="w"))
 
     logging.basicConfig(
-        level=logging.INFO, format=log_fmt, handlers=handlers, force=True
-    )  # reconfigure even in notebooks
-
+        handlers=handlers,
+        level=logging.INFO,
+        format="[%(asctime)s] %(levelname)s: %(message)s",
+        force=True,
+    )
     return logging.getLogger("benchmark")
-
-
-log = get_logger()
 
 
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--config", required=True, help="path to yaml config")
+    p.add_argument("--config", required=True, help="Path to yaml config")
     return p.parse_args()
 
 
@@ -81,47 +83,82 @@ def sample_from_grid(grid, trial):
 
 def get_model(path_string, params):
     module_name, cls_name = path_string.split(".")
-    mod = import_module(f"bodenboden.models.{module_name}")
+    mod = import_module(f"smalltabnets.models.{module_name}")
     cls = getattr(mod, cls_name)
     return cls(**params)
 
 
-def run(cfg):
-    random_state = cfg.get("random_state", 42)
-    torch.manual_seed(random_state)
-    np.random.seed(random_state)
-    random.seed(random_state)
+def load_best_params_from_file(json_path: Path):
+    recs = json.loads(Path(json_path).read_text())
+    # turn list of dicts –> dict[outer_fold] = rec
+    return {rec["outer_fold"]: rec for rec in recs}
 
-    out_dir = cfg["results_dir"]
-    os.makedirs(out_dir, exist_ok=True)
+
+def run(cfg):
+    random_state_base = cfg.get("random_state", 42)
+    torch.manual_seed(random_state_base)
+
+    out_dir = Path(cfg["results_dir"])
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     outer_k = cfg["optimization"]["cv"]["outer_folds"]
     inner_k = cfg["optimization"]["cv"]["inner_folds"]
-    n_trials = cfg["optimization"]["n_trials"]
+    n_trials = int(cfg["optimization"]["n_trials"])
+
+    # Will hold pre-tuned params if they are provided in YAML config
+    best_params_source = cfg["optimization"].get("best_params")
+    cached_best_params: dict[str, dict[int, dict]] = {}  # (ds_tgt) -> fold -> rec
 
     for entry in cfg["datasets"]:
         ds, tgt = entry["dataset"], entry["target"]
+        ds_tag = f'{ds}_{tgt.replace("_target","")}'
         log.info(f"Starting dataset={ds}, target={tgt}")
         X, y = load_limesoda_data(ds, tgt)
 
-        outer_split = KFold(n_splits=outer_k, shuffle=True, random_state=random_state)
+        outer_split = KFold(
+            n_splits=outer_k,
+            shuffle=True,
+            random_state=random_state_base,
+        )
 
         # Parse strategies from config
-        strategies = []
-        strategies_params = {}
+        strategies, strategies_params = [], {}
+        for name, s_cfg in cfg["outer_train_strategies"].items():
+            if not s_cfg.get("enabled", True):
+                continue
+            strategies.append(name)
+            strategies_params[name] = {k: v for k, v in s_cfg.items() if k != "enabled"}
+        log.info(f"Active strategies: {strategies}")
 
-        for strategy_name, strategy_config in cfg["outer_train_strategies"].items():
-            if strategy_config.get("enabled", True):
-                strategies.append(strategy_name)
-                strategies_params[strategy_name] = {
-                    k: v for k, v in strategy_config.items() if k != "enabled"
-                }
+        # If we have pre-tuned params, load them
+        if n_trials == 0 and best_params_source:
+            if os.path.isdir(best_params_source):
+                bp_file = Path(best_params_source) / ds_tag / "best_params.json"
+            else:
+                bp_file = Path(best_params_source)
+            if bp_file.exists():
+                cached_best_params[ds_tag] = load_best_params_from_file(bp_file)
+                log.info(f"Loaded cached best params from {bp_file}")
+            else:
+                raise FileNotFoundError(
+                    f"n_trials==0 but no best_param file found at {bp_file}"
+                )
 
-        outer_test_preds_by_strategy = {
-            strategy: np.zeros_like(y, dtype=float) for strategy in strategies
-        }
+        outer_test_preds_by_strategy = dict()
+        for strategy in strategies:
+            if "ensemble" not in strategy:
+                outer_test_preds_by_strategy[strategy] = np.empty_like(y, dtype=float)
 
-        fold_results = []  # list of dicts – one per outer fold
+            if "ensemble" in strategy:
+                # If ensembles are in strategies, we read the k from config
+                # and create array of shape (k, y)
+                ens_cfg = strategies_params[strategy]
+                k = int(ens_cfg.get("k", 5))
+                outer_test_preds_by_strategy[strategy] = np.empty(
+                    (k, len(y)), dtype=float
+                )
+
+        fold_records = []  # list of dicts – one per outer fold
 
         for fold_out, (train_out_idx, test_out_idx) in enumerate(
             outer_split.split(X, y)
@@ -129,61 +166,81 @@ def run(cfg):
             X_out_train, y_out_train = X[train_out_idx], y[train_out_idx]
             X_out_test, y_out_test = X[test_out_idx], y[test_out_idx]
 
-            def objective(trial):
-                params = cfg["fixed_parameters"].copy()
-                params.update(sample_from_grid(cfg["hyperparameter_grid"], trial))
-
-                inner_split = KFold(
-                    n_splits=inner_k, shuffle=True, random_state=random_state
-                )
-                fold_scores, best_rounds = [], []
-
-                for train_inner_idx, val_inner_idx in inner_split.split(
-                    X_out_train, y_out_train
-                ):
-                    X_inner_train, y_inner_train = (
-                        X_out_train[train_inner_idx],
-                        y_out_train[train_inner_idx],
-                    )
-                    X_inner_val, y_inner_val = (
-                        X_out_train[val_inner_idx],
-                        y_out_train[val_inner_idx],
-                    )
-
-                    model = get_model(cfg["model"], params)
-                    model.fit(
-                        X_inner_train,
-                        y_inner_train,
-                        eval_set=[(X_inner_val, y_inner_val)],
-                        verbose=False,
-                    )
-
-                    y_pred_inner_val = model.predict(X_inner_val)
-                    rmse_val = np.sqrt(
-                        mean_squared_error(y_inner_val, y_pred_inner_val)
-                    )
-                    fold_scores.append(rmse_val)
-
-                    if hasattr(model, "best_iteration"):
-                        best_rounds.append(model.best_iteration + 1)
-
-                trial.set_user_attr("best_rounds", best_rounds)
-                return np.mean(fold_scores)
-
+            # =============== hyper-parameter tuning or reuse ===================
+            inner_best_rounds: list[int] | None = None
+            best_params = copy.deepcopy(cfg["fixed_parameters"])
             study = None
-            best_params = cfg["fixed_parameters"].copy()
+
+            if n_trials == 0 and ds_tag not in cached_best_params:
+                log.info(f"No tuned parameters were provided, using defaults.")
+                pass
+
+            if n_trials == 0 and ds_tag in cached_best_params:
+                rec = cached_best_params[ds_tag][fold_out]
+                best_params.update(rec["best_params"])
+                inner_best_rounds = rec.get("inner_best_rounds", None)
+
             if n_trials > 0:
+
+                def objective(trial):
+                    params = cfg["fixed_parameters"].copy()
+                    params.update(sample_from_grid(cfg["hyperparameter_grid"], trial))
+
+                    inner_split = KFold(
+                        n_splits=inner_k,
+                        shuffle=True,
+                        random_state=random_state_base,
+                    )
+                    rmse_scores, best_rounds = [], []
+
+                    for train_inner_idx, val_inner_idx in inner_split.split(
+                        X_out_train, y_out_train
+                    ):
+                        X_inner_train, y_inner_train = (
+                            X_out_train[train_inner_idx],
+                            y_out_train[train_inner_idx],
+                        )
+                        X_inner_val, y_inner_val = (
+                            X_out_train[val_inner_idx],
+                            y_out_train[val_inner_idx],
+                        )
+
+                        model = get_model(cfg["model"], params)
+                        model.fit(
+                            X_inner_train,
+                            y_inner_train,
+                            eval_set=[(X_inner_val, y_inner_val)],
+                            verbose=False,
+                        )
+
+                        y_pred_inner_val = model.predict(X_inner_val)
+                        rmse_val = np.sqrt(
+                            mean_squared_error(y_inner_val, y_pred_inner_val)
+                        )
+                        rmse_scores.append(rmse_val)
+
+                        if hasattr(model, "best_iteration"):
+                            best_rounds.append(model.best_iteration + 1)
+
+                    trial.set_user_attr("best_rounds", best_rounds)
+                    return np.mean(rmse_scores)
+
                 sampler_type = cfg["optimization"].get("sampler", "tpe").lower()
                 if sampler_type == "bruteforce":
                     sampler = optuna.samplers.BruteForceSampler(
-                        seed=random_state,
+                        seed=random_state_base,
+                        **cfg["optimization"].get("sampler_params", {}),
                     )
-                else:  # default to TPE
+                elif sampler_type == "tpe":
                     sampler = optuna.samplers.TPESampler(
-                        seed=random_state, **cfg["optimization"]["sampler_params"]
+                        seed=random_state_base,
+                        **cfg["optimization"].get("sampler_params", {}),
                     )
-                study = optuna.create_study(direction="minimize", sampler=sampler)
 
+                study = optuna.create_study(
+                    direction="minimize",
+                    sampler=sampler,
+                )
                 study.optimize(
                     objective,
                     n_trials=n_trials,
@@ -191,262 +248,271 @@ def run(cfg):
                 )
 
                 best_params.update(study.best_trial.params)
+                inner_best_rounds = study.best_trial.user_attrs["best_rounds"]
                 log.info(f" Fold {fold_out}: best params={best_params}")
 
-            # Now, we have best aprams - whether neede to tune them or not
+            # Now, we have best params - whether we needed to tune them or not
             # Let's train outer model and save the predictions
 
-            # Strategy: agg_epochs_mean
-            # Aggregate the best rounds from all inner folds, and use the mean
-            # as the number of epochs to train the outer model
+            # =============== aggregation strategies ===================
+            # (1) agg_epochs_mean
             if "agg_epochs_mean" in strategies:
-                strategy_best_params = copy.deepcopy(best_params)
-                if study.best_trial.user_attrs["best_rounds"]:
-                    rounds = np.mean(study.best_trial.user_attrs["best_rounds"])
-                    rounds = int(rounds)
-                    log.info(f"Strategy: mean rounds, training with {rounds} epochs")
+                with torch.random.fork_rng():
+                    torch.manual_seed(random_state_base)
 
-                    if "n_estimators" in strategy_best_params:
-                        strategy_best_params["n_estimators"] = rounds
-                    elif "epochs" in strategy_best_params:
-                        strategy_best_params["epochs"] = rounds
-                    elif "n_epochs" in strategy_best_params:
-                        strategy_best_params["n_epochs"] = rounds
-                    strategy_best_params["early_stopping_rounds"] = None
-                    strategy_best_params["use_early_stopping"] = False
-                    model = get_model(cfg["model"], strategy_best_params)
-
-                    # Fit with the whole outer training set
-                    model.fit(X_out_train, y_out_train, verbose=False)
-                    # Save fold/strategy predictions
-                    outer_test_preds_by_strategy["agg_epochs_mean"][test_out_idx] = (
-                        model.predict(X_out_test)
+                    params_strategy = copy.deepcopy(best_params)
+                    mean_epochs = (
+                        np.mean(inner_best_rounds) if inner_best_rounds else None
                     )
+                    if mean_epochs is not None:
+                        # We are interested in n_estimators or epochs
+                        if "n_estimators" in params_strategy:
+                            params_strategy["n_estimators"] = int(mean_epochs)
+                        elif "epochs" in params_strategy:
+                            params_strategy["epochs"] = int(mean_epochs)
 
-            # Strategy: agg_epochs_mean_std
-            # Aggregate the best rounds from all inner folds, and use the mean
-            # plus std as the number of epochs to train the outer model
-            if "agg_epochs_mean_std" in strategies:
-                strategy_best_params = copy.deepcopy(best_params)
-                if study.best_trial.user_attrs["best_rounds"]:
-                    rounds = np.mean(
-                        study.best_trial.user_attrs["best_rounds"]
-                    ) + np.std(study.best_trial.user_attrs["best_rounds"])
-                    rounds = int(rounds)
-                    log.info(
-                        f"Strategy: mean+std rounds, training with {rounds} epochs"
-                    )
+                    # Disable early stopping
+                    params_strategy["use_early_stopping"] = False
+                    params_strategy["early_stopping_rounds"] = None
 
-                    if "n_estimators" in strategy_best_params:
-                        strategy_best_params["n_estimators"] = rounds
-                    elif "epochs" in strategy_best_params:
-                        strategy_best_params["epochs"] = rounds
-                    elif "n_epochs" in strategy_best_params:
-                        strategy_best_params["n_epochs"] = rounds
-
-                    strategy_best_params["early_stopping_rounds"] = None
-                    model = get_model(cfg["model"], strategy_best_params)
-
-                    # Fit with the whole outer training set
+                    model = get_model(cfg["model"], params_strategy)
                     model.fit(X_out_train, y_out_train, verbose=False)
-                    # Save fold/strategy predictions
-                    outer_test_preds_by_strategy["agg_epochs_mean_std"][
+                    preds = model.predict(X_out_test)
+                    outer_test_preds_by_strategy["agg_epochs_mean"][
                         test_out_idx
-                    ] = model.predict(X_out_test)
+                    ] = preds
 
-            # Strategy: agg_epochs_percentile
-            # Aggregate the best rounds from all inner folds, and use the 90th
-            # percentile as the number of epochs to train the outer model
-            if "agg_epochs_percentile" in strategies:
-                rounds_percentile = strategies_params["agg_epochs_percentile"].get(
-                    "percentile", 90
-                )
+            # (2) agg_epochs_mean_ensemble
+            if "agg_epochs_mean_ensemble" in strategies:
+                with torch.random.fork_rng():
+                    torch.manual_seed(random_state_base)
 
-                strategy_best_params = copy.deepcopy(best_params)
-                if study.best_trial.user_attrs["best_rounds"]:
-                    rounds = np.percentile(
-                        study.best_trial.user_attrs["best_rounds"], rounds_percentile
+                    params_strategy = copy.deepcopy(best_params)
+                    mean_epochs = (
+                        np.mean(inner_best_rounds) if inner_best_rounds else None
                     )
-                    rounds = int(rounds)
-                    log.info(
-                        f"Strategy: {rounds_percentile}th percentile rounds, training with {rounds} epochs"
-                    )
+                    if mean_epochs is not None:
+                        # We are interested in n_estimators or epochs
+                        if "n_estimators" in params_strategy:
+                            params_strategy["n_estimators"] = int(mean_epochs)
+                        elif "epochs" in params_strategy:
+                            params_strategy["epochs"] = int(mean_epochs)
 
-                    if "n_estimators" in strategy_best_params:
-                        strategy_best_params["n_estimators"] = rounds
-                    elif "epochs" in strategy_best_params:
-                        strategy_best_params["epochs"] = rounds
-                    elif "n_epochs" in strategy_best_params:
-                        strategy_best_params["n_epochs"] = rounds
+                    # Disable early stopping
+                    params_strategy["use_early_stopping"] = False
+                    params_strategy["early_stopping_rounds"] = None
 
-                    strategy_best_params["early_stopping_rounds"] = None
-                    model = get_model(cfg["model"], strategy_best_params)
+                    ens_cfg = strategies_params["agg_epochs_mean_ensemble"]
+                    k = int(ens_cfg.get("k", 5))
 
-                    # Fit with the whole outer training set
-                    model.fit(X_out_train, y_out_train, verbose=False)
-                    # Save fold/strategy predictions
-                    outer_test_preds_by_strategy["agg_epochs_percentile"][
-                        test_out_idx
-                    ] = model.predict(X_out_test)
+                    preds_k = []
+                    for seed in range(k):
+                        params_ens_member = copy.deepcopy(params_strategy)
+                        params_ens_member["random_state"] = seed
 
-            # Strategy: full_train
-            # Train the model with the whole outer training set, using 256 epochs
-            if "full_train" in strategies:
-                full_train_epochs = strategies_params["full_train"].get("epochs", 256)
+                        model = get_model(cfg["model"], params_ens_member)
+                        model.fit(X_out_train, y_out_train, verbose=False)
+                        preds_k.append(model.predict(X_out_test))
 
-                strategy_best_params = copy.deepcopy(best_params)
-                log.info(
-                    f"Strategy: full train, training with {full_train_epochs} epochs (no early stopping)"
-                )
-                if "n_estimators" in strategy_best_params:
-                    strategy_best_params["n_estimators"] = full_train_epochs
-                elif "epochs" in strategy_best_params:
-                    strategy_best_params["epochs"] = full_train_epochs
-                elif "n_epochs" in strategy_best_params:
-                    strategy_best_params["n_epochs"] = full_train_epochs
-                strategy_best_params["early_stopping_rounds"] = None
-                model = get_model(cfg["model"], strategy_best_params)
-                model.fit(X_out_train, y_out_train, verbose=False)
-                outer_test_preds_by_strategy["full_train"][test_out_idx] = (
-                    model.predict(X_out_test)
-                )
+                    outer_test_preds_by_strategy["agg_epochs_mean_ensemble"][
+                        :, test_out_idx
+                    ] = preds_k
 
-            # Strategy: early_stopping
-            # Use validation set, separated from outer training set
-            # to determine the best number of epochs
+            # (3) early_stopping
             if "early_stopping" in strategies:
-                early_stopping_val_frac = strategies_params["early_stopping"].get(
-                    "val_frac", 0.2
-                )
+                with torch.random.fork_rng():
+                    torch.manual_seed(random_state_base)
 
-                strategy_best_params = copy.deepcopy(best_params)
-                patience_pr = strategy_best_params.get("early_stopping_rounds", None)
-                if patience_pr is None:
-                    patience_pr = strategy_best_params.get(
-                        "early_stopping_additive_patience", None
-                    )
-                log.info(
-                    f"Strategy: early stopping, training with patience of {patience_pr}"
-                )
-                X_out_train_stop, X_out_val_stop, y_out_train_stop, y_out_val_stop = (
-                    train_test_split(
+                    params_strategy = copy.deepcopy(best_params)
+
+                    es_cfg = strategies_params["early_stopping"]
+                    val_frac = es_cfg.get("val_frac", 0.2)
+
+                    X_train_es, X_val_es, y_train_es, y_val_es = train_test_split(
                         X_out_train,
                         y_out_train,
-                        test_size=early_stopping_val_frac,
-                        random_state=random_state,
+                        test_size=val_frac,
+                        random_state=random_state_base,
                         shuffle=True,
                     )
-                )
-                model = get_model(cfg["model"], strategy_best_params)
-                model.fit(
-                    X_out_train_stop,
-                    y_out_train_stop,
-                    eval_set=[(X_out_val_stop, y_out_val_stop)],
-                    verbose=False,
-                )
-                outer_test_preds_by_strategy["early_stopping"][test_out_idx] = (
-                    model.predict(X_out_test)
-                )
-            else:
-                outer_test_preds_by_strategy.pop("early_stopping", None)
 
-            # Strategy: ensemble inner models
-            # Use the inner models to predict the outer test set
-            if "ensemble" in strategies:
-                strategy_best_params = copy.deepcopy(best_params)
-                log.info(f"Strategy: ensemble inner models")
-                inner_split = KFold(
-                    n_splits=inner_k, shuffle=True, random_state=random_state
-                )
-                models_inner = []
-                rmse_inner = []
-                preds_outer = []
-                for train_inner_idx, val_inner_idx in inner_split.split(
-                    X_out_train, y_out_train
-                ):
-                    X_inner_train, y_inner_train = (
-                        X_out_train[train_inner_idx],
-                        y_out_train[train_inner_idx],
-                    )
-                    X_inner_val, y_inner_val = (
-                        X_out_train[val_inner_idx],
-                        y_out_train[val_inner_idx],
-                    )
-
-                    model = get_model(cfg["model"], strategy_best_params)
+                    model = get_model(cfg["model"], params_strategy)
                     model.fit(
-                        X_inner_train,
-                        y_inner_train,
-                        eval_set=[(X_inner_val, y_inner_val)],
+                        X_train_es,
+                        y_train_es,
+                        eval_set=[(X_val_es, y_val_es)],
                         verbose=False,
                     )
-                    models_inner.append(model)
-                    pred_inner = model.predict(X_inner_val)
-                    rmse_inner.append(
-                        np.sqrt(mean_squared_error(y_inner_val, pred_inner))
-                    )
-                    preds_outer.append(model.predict(X_out_test))
-                preds_outer = np.array(preds_outer)
-                preds_outer_mean = np.mean(preds_outer, axis=0)
-                outer_test_preds_by_strategy["ensemble"][
-                    test_out_idx
-                ] = preds_outer_mean
+                    preds = model.predict(X_out_test)
+                    outer_test_preds_by_strategy["early_stopping"][test_out_idx] = preds
 
-            # Strategy: best_inner_model
-            # Use the best inner model to predict the outer test set
-            if "best_inner_model" in strategies:
-                log.info(f"Strategy: best inner model")
-                best_inner_model_idx = np.argmin(np.array(rmse_inner))
-                preds_outer_best_inner = preds_outer[best_inner_model_idx]
-                outer_test_preds_by_strategy["best_inner_model"][
-                    test_out_idx
-                ] = preds_outer_best_inner
+            # (4) early_stopping_ensemble
+            if "early_stopping_ensemble" in strategies:
+                with torch.random.fork_rng():
+                    torch.manual_seed(random_state_base)
+
+                    params_strategy = copy.deepcopy(best_params)
+
+                    es_cfg = strategies_params["early_stopping_ensemble"]
+                    val_frac = es_cfg.get("val_frac", 0.2)
+                    k = int(es_cfg.get("k", 5))
+
+                    preds_k = []
+                    for seed in range(k):
+                        params_ens_member = copy.deepcopy(params_strategy)
+                        params_ens_member["random_state"] = seed
+
+                        X_train_es, X_val_es, y_train_es, y_val_es = train_test_split(
+                            X_out_train,
+                            y_out_train,
+                            test_size=val_frac,
+                            random_state=seed,
+                            shuffle=True,
+                        )
+
+                        model = get_model(cfg["model"], params_ens_member)
+                        model.fit(
+                            X_train_es,
+                            y_train_es,
+                            eval_set=[(X_val_es, y_val_es)],
+                            verbose=False,
+                        )
+                        preds_k.append(model.predict(X_out_test))
+
+                    outer_test_preds_by_strategy["early_stopping_ensemble"][
+                        :, test_out_idx
+                    ] = preds_k
+
+            # (5) full_eps
+            if "full_eps" in strategies:
+                with torch.random.fork_rng():
+                    torch.manual_seed(random_state_base)
+
+                    params_strategy = copy.deepcopy(best_params)
+
+                    strat_cfg = strategies_params["full_eps"]
+                    val_frac = strat_cfg.get("val_frac", 0.2)
+                    n_full_eps = int(strat_cfg.get("epochs", 256))
+
+                    X_train_es, X_val_es, y_train_es, y_val_es = train_test_split(
+                        X_out_train,
+                        y_out_train,
+                        test_size=val_frac,
+                        random_state=random_state_base,
+                        shuffle=True,
+                    )
+
+                    # Override eps
+                    params_strategy["early_stopping_rounds"] = n_full_eps
+                    params_strategy["epochs"] = n_full_eps
+
+                    model = get_model(cfg["model"], params_strategy)
+                    model.fit(
+                        X_train_es,
+                        y_train_es,
+                        eval_set=[(X_val_es, y_val_es)],
+                        verbose=False,
+                    )
+                    preds = model.predict(X_out_test)
+                    outer_test_preds_by_strategy["full_eps"][test_out_idx] = preds
+
+            # (6) full_eps_ensemble
+            if "full_eps_ensemble" in strategies:
+                with torch.random.fork_rng():
+                    torch.manual_seed(random_state_base)
+
+                    params_strategy = copy.deepcopy(best_params)
+
+                    strat_cfg = strategies_params["full_eps_ensemble"]
+                    es_cfg = strategies_params["full_eps_ensemble"]
+                    val_frac = es_cfg.get("val_frac", 0.2)
+                    n_full_eps = int(strat_cfg.get("epochs", 256))
+
+                    k = int(es_cfg.get("k", 5))
+
+                    # Override eps
+                    params_strategy["early_stopping_rounds"] = n_full_eps
+                    params_strategy["epochs"] = n_full_eps
+
+                    preds_k = []
+                    for seed in range(k):
+                        params_ens_member = copy.deepcopy(params_strategy)
+                        params_ens_member["random_state"] = seed
+
+                        X_train_es, X_val_es, y_train_es, y_val_es = train_test_split(
+                            X_out_train,
+                            y_out_train,
+                            test_size=val_frac,
+                            random_state=seed,
+                            shuffle=True,
+                        )
+
+                        model = get_model(cfg["model"], params_ens_member)
+                        model.fit(
+                            X_train_es,
+                            y_train_es,
+                            eval_set=[(X_val_es, y_val_es)],
+                            verbose=False,
+                        )
+                        preds_k.append(model.predict(X_out_test))
+
+                    outer_test_preds_by_strategy["full_eps_ensemble"][
+                        :, test_out_idx
+                    ] = preds_k
 
             # Calculate outer fold metrics for each strategy and print
-            for strategy, preds_fold in outer_test_preds_by_strategy.items():
-                preds_fold = preds_fold[test_out_idx]
-                fold_rmse = np.sqrt(mean_squared_error(y_out_test, preds_fold))
-                fold_r2 = r2_score(y_out_test, preds_fold)
+            for strat in strategies:
+                if "ensemble" in strat:
+                    # For ensemble strategies, we have k predictions
+                    preds = outer_test_preds_by_strategy[strat][:, test_out_idx]
+                    preds = np.mean(preds, axis=0)  # average over k predictions
+                else:
+                    # For non-ensemble strategies, we have a single prediction
+                    preds = outer_test_preds_by_strategy[strat][test_out_idx]
+
+                fold_rmse = np.sqrt(mean_squared_error(y_out_test, preds))
+                fold_r2 = r2_score(y_out_test, preds)
                 log.info(
-                    f"Fold {fold_out}: {strategy} RMSE={fold_rmse:.5f}   R²={fold_r2:.5f}"
+                    f"Fold {fold_out} – {strat:27s}  "
+                    f"RMSE={fold_rmse:.5f}  R²={fold_r2:.5f}"
                 )
 
-            fold_results.append(
-                {
-                    "outer_fold": fold_out,
-                    "best_params": best_params,
-                    "inner_best_rounds": (
-                        study.best_trial.user_attrs["best_rounds"] if study else None
-                    ),
-                    "inner_cv_mse": study.best_value if study else None,
-                    "outer_rmse": fold_rmse,
-                    "outer_r2": fold_r2,
-                }
+            fold_records.append(
+                dict(
+                    outer_fold=fold_out,
+                    best_params=best_params,
+                    inner_best_rounds=inner_best_rounds,
+                    inner_cv_mse=(study.best_value if n_trials else None),
+                )
             )
 
-        # ───────── save predictions + best params ────────────────────────
-        save_dir = os.path.join(out_dir, f'{ds}_{tgt.replace("_target","")}')
-        os.makedirs(save_dir, exist_ok=True)
-        shutil.copy(args.config, os.path.join(save_dir, "run_config_copy.yaml"))
-        np.save(os.path.join(save_dir, "y_true.npy"), y)
+        # =============== save results for this dataset ===================
+        save_dir = out_dir / ds_tag
+        save_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy(args.config, save_dir / "run_config_copy.yaml")
+        np.save(save_dir / "y_true.npy", y)
 
-        # Save predictions for each strategy
-        for strategy, preds_all in outer_test_preds_by_strategy.items():
-            np.save(os.path.join(save_dir, f"y_pred_{strategy}.npy"), preds_all)
+        for strat, preds in outer_test_preds_by_strategy.items():
+            np.save(save_dir / f"y_pred_{strat}.npy", preds)
 
-        with open(os.path.join(save_dir, "best_params.json"), "w") as f:
-            json.dump(fold_results, f, indent=2)
+        (save_dir / "best_params.json").write_text(json.dumps(fold_records, indent=2))
 
-        # Print overall metrics for each strategy
-        for strategy, preds_all in outer_test_preds_by_strategy.items():
-            fold_rmse = np.sqrt(mean_squared_error(y, preds_all))
-            fold_r2 = r2_score(y, preds_all)
-            log.info(f"Overall: {strategy} RMSE={fold_rmse:.5f}   R²={fold_r2:.5f}")
-        log.info(f"Finished {ds}/{tgt}")
+        # overall metrics
+        for strat, preds in outer_test_preds_by_strategy.items():
+            if "ensemble" in strat:
+                # For ensemble strategies, we have k predictions
+                preds = np.mean(preds, axis=0)
+
+            rmse = np.sqrt(mean_squared_error(y, preds))
+            r2 = r2_score(y, preds)
+            log.info(f"Overall -- {strat:27s}  RMSE={rmse:.5f}  R²={r2:.5f}")
+
+        log.info(f" Finished {ds}/{tgt}, results saved to {save_dir}")
 
 
-# ──────────────────────────── entry point ───────────────────────────────
 if __name__ == "__main__":
+    log = get_logger()
+
     args = parse_args()
     cfg = load_cfg(args.config)
     run(cfg)
