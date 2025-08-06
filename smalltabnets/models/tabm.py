@@ -47,6 +47,7 @@ class TabMRegressor(BaseTabularRegressor):
         self.weight_decay = weight_decay
         self.beta1 = beta1
         self.beta2 = beta2
+        # self.gradient_clipping_norm = gradient_clipping_norm
         self.share_training_batches = share_training_batches
 
         # Embeddings
@@ -113,15 +114,6 @@ class TabMRegressor(BaseTabularRegressor):
 
         return model.to(self.device)
 
-    def _get_optimizer(self, parameters):
-        """TabM uses AdamW with custom parameter groups."""
-
-        return torch.optim.AdamW(
-            make_parameter_groups(self.model),
-            lr=self.learning_rate,
-            weight_decay=self.weight_decay,
-            betas=(self.beta1, self.beta2),
-        )
 
     def _compute_loss(self, predictions, batch, criterion):
         """Special loss for ensemble."""
