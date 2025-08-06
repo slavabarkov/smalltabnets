@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Literal, Optional, Tuple, Union
+from typing import Any, Dict, Literal, Optional, Union
 
 import numpy as np
 import torch
@@ -7,6 +7,7 @@ import torch.nn as nn
 from sklearn.base import BaseEstimator, RegressorMixin
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import RobustScaler, StandardScaler
+from threadpoolctl import threadpool_limits
 
 
 class BaseTabularRegressor(BaseEstimator, RegressorMixin, ABC):
@@ -45,6 +46,10 @@ class BaseTabularRegressor(BaseEstimator, RegressorMixin, ABC):
         standardize_targets: bool = False,
         clip_features: bool = False,
         clip_outputs: bool = False,
+        # Optimizer parameters
+        weight_decay: float = 0.01,
+        beta1=0.9,
+        beta2=0.999,
         # Base dimensionality reduction parameters
         use_pca: bool = False,
         n_pca_components: Optional[Union[int, float]] = 0.95,
@@ -61,6 +66,10 @@ class BaseTabularRegressor(BaseEstimator, RegressorMixin, ABC):
         self.gradient_clipping_norm = gradient_clipping_norm
         self.use_early_stopping = use_early_stopping
         self.early_stopping_rounds = early_stopping_rounds
+
+        self.weight_decay = weight_decay
+        self.beta1 = beta1
+        self.beta2 = beta2
 
         self.feature_scaling = feature_scaling
         self.standardize_targets = standardize_targets
@@ -124,11 +133,14 @@ class BaseTabularRegressor(BaseEstimator, RegressorMixin, ABC):
                 elif n_components > X.shape[1]:
                     n_components = X.shape[1]
 
-                self._pca = PCA(
-                    n_components=n_components,
-                    random_state=self.random_state,
-                )
-                X = self._pca.fit_transform(X)
+                # This makes PCA run in single-threaded mode, which makes it run much slower,
+                # but avoids some issues with multithreading
+                with threadpool_limits(limits=1):
+                    self._pca = PCA(
+                        n_components=n_components,
+                        random_state=self.random_state,
+                    )
+                    X = self._pca.fit_transform(X)
 
                 if self.verbose:
                     actual_components = self._pca.n_components_
@@ -179,16 +191,14 @@ class BaseTabularRegressor(BaseEstimator, RegressorMixin, ABC):
         y_val = self._apply_target_preprocessing(y_val, fit=False)
         return [(X_val, y_val)]
 
-    # ========================================================================
-    # Common PyTorch training logic with FP16 support
-    # ========================================================================
-
-    def _get_optimizer(self, parameters) -> torch.optim.Optimizer:
-        """
-        Create optimizer for training.
-        Subclasses can override to use different optimizers.
-        """
-        return torch.optim.AdamW(parameters, lr=self.learning_rate)
+    def _get_optimizer(self, parameters):
+        """AdamW with optional custom parameter groups."""
+        return torch.optim.AdamW(
+            params=parameters,
+            lr=self.learning_rate,
+            weight_decay=self.weight_decay,
+            betas=(self.beta1, self.beta2),
+        )
 
     def _get_criterion(self):
         """
@@ -376,10 +386,7 @@ class BaseTabularRegressor(BaseEstimator, RegressorMixin, ABC):
         if best_state is not None:
             self.model.load_state_dict(best_state)
 
-    # ========================================================================
     # Abstract methods
-    # ========================================================================
-
     @abstractmethod
     def _create_model(self, n_features):
         """Create the underlying model instance."""
