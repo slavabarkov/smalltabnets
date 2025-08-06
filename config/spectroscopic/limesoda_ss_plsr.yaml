@@ -1,0 +1,123 @@
+model: plsr.PLSR
+random_state: 42
+results_dir: results/evaluate/limesoda_ss_plsr_evaluate
+
+fixed_parameters:
+  epochs: null
+  use_early_stopping: null
+  early_stopping_rounds: null
+  device: null
+  random_state: 42
+  use_pca: false
+  n_pca_components: null
+  feature_scaling: robust
+  standardize_targets: false
+
+hyperparameter_grid:
+  n_components:
+    type: int
+    low: 2
+    high: 32
+
+datasets:
+  - dataset: CV.98
+    target: SOC_target
+  - dataset: CV.98
+    target: pH_target
+  - dataset: CV.98
+    target: Clay_target
+  - dataset: H.138
+    target: SOC_target
+  - dataset: H.138
+    target: pH_target
+  - dataset: H.138
+    target: Clay_target
+  - dataset: MG.44
+    target: SOC_target
+  - dataset: MG.44
+    target: pH_target
+  - dataset: MG.44
+    target: Clay_target
+  - dataset: NRW.115
+    target: SOC_target
+  - dataset: NRW.115
+    target: pH_target
+  - dataset: NRW.115
+    target: Clay_target
+  - dataset: NRW.42
+    target: SOC_target
+  - dataset: NRW.42
+    target: pH_target
+  - dataset: NRW.42
+    target: Clay_target
+  - dataset: NRW.62
+    target: SOC_target
+  - dataset: NRW.62
+    target: pH_target
+  - dataset: NRW.62
+    target: Clay_target
+  - dataset: O.32
+    target: SOC_target
+  - dataset: O.32
+    target: pH_target
+  - dataset: O.32
+    target: Clay_target
+  - dataset: SC.93
+    target: SOC_target
+  - dataset: SC.93
+    target: pH_target
+  - dataset: SC.93
+    target: Clay_target
+  - dataset: SL.125
+    target: SOM_target
+  - dataset: SL.125
+    target: pH_target
+  - dataset: SL.125
+    target: Clay_target
+  - dataset: SP.231
+    target: SOM_target
+  - dataset: SP.231
+    target: pH_target
+  - dataset: SP.231
+    target: Clay_target
+  - dataset: SSP.460
+    target: SOC_target
+  - dataset: SSP.460
+    target: pH_target
+  - dataset: SSP.460
+    target: Clay_target
+  - dataset: SSP.58
+    target: SOC_target
+  - dataset: SSP.58
+    target: pH_target
+  - dataset: SSP.58
+    target: Clay_target
+  - dataset: UL.120
+    target: SOM_target
+  - dataset: UL.120
+    target: pH_target
+  - dataset: UL.120
+    target: Clay_target
+  - dataset: RP.62
+    target: SOC_target
+  - dataset: RP.62
+    target: pH_target
+  - dataset: RP.62
+    target: Clay_target
+  - dataset: SA.112
+    target: SOC_target
+  - dataset: SA.112
+    target: pH_target
+  - dataset: SA.112
+    target: Clay_target
+
+optimization:
+  n_trials: 30
+  sampler: bruteforce
+  cv:
+    outer_folds: 5
+    inner_folds: 5
+
+outer_train_strategies:
+  agg_epochs_mean:
+    enabled: true
