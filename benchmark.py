@@ -23,12 +23,12 @@ def get_logger(
     log_to_file: bool = False,
 ) -> logging.Logger:
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    os.makedirs("logs", exist_ok=True)
 
     handlers = []
     if log_to_stdout:
         handlers.append(logging.StreamHandler(sys.stdout))
     if log_to_file:
+        os.makedirs("logs", exist_ok=True)
         handlers.append(logging.FileHandler(f"logs/run_{ts}.log", mode="w"))
 
     logging.basicConfig(
@@ -473,7 +473,7 @@ def run(cfg):
                 fold_rmse = np.sqrt(mean_squared_error(y_out_test, preds))
                 fold_r2 = r2_score(y_out_test, preds)
                 log.info(
-                    f"Fold {fold_out} – {strat:27s}  "
+                    f"Fold {fold_out} - {strat:27s}  "
                     f"RMSE={fold_rmse:.5f}  R²={fold_r2:.5f}"
                 )
 
@@ -493,7 +493,11 @@ def run(cfg):
         np.save(save_dir / "y_true.npy", y)
 
         for strat, preds in outer_test_preds_by_strategy.items():
-            np.save(save_dir / f"y_pred_{strat}.npy", preds)
+            if preds.ndim == 2:
+                # For ensemble strategies, we have k predictions, average them
+                np.save(save_dir / f"y_pred_{strat}.npy", preds.mean(axis=0))
+            else:
+                np.save(save_dir / f"y_pred_{strat}.npy", preds)
 
         (save_dir / "best_params.json").write_text(json.dumps(fold_records, indent=2))
 
