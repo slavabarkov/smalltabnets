@@ -1,0 +1,16 @@
+[project]
+name = "smalltabnets"
+version = "1.0.0"
+description = "A benchmarking framework for evaluating modern deep neural networks on small tabular datasets."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "limesoda>=0.1.5",
+    "optuna>=4.4.0",
+    "pyyaml>=6.0.2",
+    "rtdl-num-embeddings>=0.0.12",
+    "scikit-learn>=1.5.2",
+    "tabpfn==2.0.9",
+    "torch>=2.8.0",
+    "xgboost>=3.0.3",
+]
