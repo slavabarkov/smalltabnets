@@ -140,4 +140,4 @@ optimization:
 outer_train_strategies:
   agg_epochs_mean_ensemble:
     enabled: true
-    k: 64
+    k: 16

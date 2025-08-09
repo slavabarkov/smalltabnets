@@ -160,4 +160,4 @@ outer_train_strategies:
   early_stopping_ensemble:
     enabled: true
     val_frac: 0.2
-    k: 64
+    k: 16

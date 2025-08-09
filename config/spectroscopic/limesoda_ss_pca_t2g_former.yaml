@@ -166,4 +166,4 @@ outer_train_strategies:
     enabled: true
     val_frac: 0.2
     epochs: 256
-    k: 64
+    k: 16
