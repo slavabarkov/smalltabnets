@@ -14,7 +14,7 @@ This repository provides a unified framework for evaluating modern deep neural n
   - **Classical ML**: Linear Regression, Ridge, Lasso, PLSR, Random Forest, XGBoost
   - **MLP-based NNs**: MLP, TabM, RealMLP
   - **Retrieval-based NNs**: TabR, ModernNCA
-  - **Attention-based NNs**: AutoInt, FT-Transformer, ExcelFormer, T2G-Former, AM-Former
+  - **Attention-based NNs**: AutoInt, FT-Transformer, ExcelFormer, T2G-Former, AMFormer
   - **In-context learning foundation models**: TabPFN
 
 - **Configuration**: Experiment settings defined via YAML configuration files. Configuration files for datasets with feature-to-sample ratio < 1 are in the [config/pss/](config/pss/) folder, while configurations for high-dimensional datasets with ratio > 1 (including MIR/NIR spectroscopy features) are in the [config/spectroscopic/](config/spectroscopic/) folder.
