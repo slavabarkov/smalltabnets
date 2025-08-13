@@ -2,7 +2,7 @@
   <img src="https://github.com/user-attachments/assets/766f446c-c17c-44d9-bee6-02be56eaec12" alt="Modern neural networks for small tabular datasets"/>
 </p>
 
-An evaluation framework from the paper **"Modern Deep Neural Networks for Small Tabular Datasets: Insights from Digital Soil Mapping"**
+An evaluation framework from the paper **"Modern Neural Networks for Small Tabular Datasets: The New Default for Field-Scale Digital Soil Mapping?"**
 
 This repository provides a unified framework for evaluating modern deep neural networks on small tabular datasets, evaluated on 31 field- and farm-scale digital soil mapping datasets from [LimeSoDa](https://github.com/a11to1n3/LimeSoDa).
 
@@ -46,7 +46,7 @@ Complete experimental results, including optimized hyperparameters for all datas
 
 ```bibtex
 @article{barkov2025smalltabnets,
-  title={Modern Deep Neural Networks for Small Tabular Datasets: Insights from Digital Soil Mapping},
+  title={Modern Neural Networks for Small Tabular Datasets: The New Default for Field-Scale {Digital Soil Mapping}?},
   author={Viacheslav Barkov and Jonas Schmidinger and Robin Gebbers and Martin Atzmueller},
   year={2025}
 }
