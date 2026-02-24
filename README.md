@@ -45,13 +45,14 @@ Complete experimental results, including optimized hyperparameters for all datas
 ## Citation
 
 ```bibtex
-@misc{barkov2025modern,
-  title         = {Modern Neural Networks for Small Tabular Datasets: The New Default for Field-Scale {Digital} {Soil} {Mapping}?},
-  author        = {Viacheslav Barkov and Jonas Schmidinger and Robin Gebbers and Martin Atzmueller},
-  year          = {2025},
-  eprint        = {2508.09888},
-  archiveprefix = {arXiv},
-  primaryclass  = {cs.LG},
-  url           = {https://arxiv.org/abs/2508.09888},
+@article{barkov2026modern,
+  title   = {Modern neural networks for small tabular datasets: {The} new default for field-scale {Digital} {Soil} {Mapping}?},
+  author  = {Barkov, Viacheslav and Schmidinger, Jonas and Gebbers, Robin and Atzmueller, Martin},
+  journal = {European Journal of Soil Science},
+  volume  = {77},
+  year    = {2026},
+  pages   = {e70299},
+  number  = {2},
+  doi     = {10.1111/ejss.70299},
 }
 ```
